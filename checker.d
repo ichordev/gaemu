@@ -108,10 +108,10 @@ NodeFunc[] gmkLoadScripts (Gmk gmk) {
               }
               if (act.funcname == "action_execute_script") {
                 import std.conv : to;
-                if (act.argused < 1 || act.argtypes[0] != act.ArgType.t_script) assert(0, "invalid action function arguments: '"~act.funcname~"'");
+                if (act.argused < 1 || act.argtypes[0] != act.ArgType.t_script) assert(0, "invalid action function arguments: '"~act.funcname~"' for object '"~obj.name~"'");
                 string s = gmk.scriptByNum(to!int(act.argvals[0])).name~"(";
                 foreach (immutable idx; 1..act.argused) {
-                  if (act.argtypes[idx] != act.ArgType.t_expr) assert(0, "invalid action type for execscript: "~to!string(act.argtypes[idx]));
+                  if (act.argtypes[idx] != act.ArgType.t_expr) assert(0, "invalid action type for execscript: "~to!string(act.argtypes[idx])~" for object '"~obj.name~"'");
                   if (idx != 1) s ~= ", ";
                   s ~= act.argvals[idx];
                 }
@@ -119,7 +119,7 @@ NodeFunc[] gmkLoadScripts (Gmk gmk) {
                 evcode ~= s;
                 continue;
               }
-              assert(0, "invalid action function: '"~act.funcname~"'");
+              assert(0, "invalid action function: '"~act.funcname~"' for object '"~obj.name~"'");
             }
             assert(0, "invalid normal action type");
           }
@@ -166,6 +166,16 @@ NodeFunc[] gmkLoadScripts (Gmk gmk) {
           } else {
             assert(0);
           }
+        } else if (evtype == GMEvent.Type.ev_keypress) {
+          parseECode(evcode, to!string(evtype)~to!string(evidx));
+        } else if (evtype == GMEvent.Type.ev_keyboard) {
+          parseECode(evcode, to!string(evtype)~to!string(evidx));
+        } else if (evtype == GMEvent.Type.ev_mouse) {
+          parseECode(evcode, to!string(evtype)~to!string(evidx));
+        } else if (evtype == GMEvent.Type.ev_collision) {
+          parseECode(evcode, to!string(evtype)~to!string(evidx));
+        } else if (evtype == GMEvent.Type.ev_other) {
+          parseECode(evcode, to!string(evtype)~to!string(evidx));
         } else {
           if (evidx > 0) {
             { import std.stdio; writeln("fuck! ", evtype, " #", evidx, " for '", obj.name, "'"); }
@@ -177,9 +187,11 @@ NodeFunc[] gmkLoadScripts (Gmk gmk) {
     }
 
     foreach (immutable evtype; 0..GMEvent.Type.max+1) {
+      if (evtype != GMEvent.Type.ev_create) {
+        if (obj.name == "oGamepad") continue;
+      }
       createEvent(cast(GMEvent.Type)evtype);
     }
-    //if (obj.name != "oGamepad") createEvent(GMEvent.Type.ev_step);
   }
 
   void processChildren (string parent) {
