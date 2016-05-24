@@ -167,7 +167,13 @@ NodeFunc[] gmkLoadScripts (Gmk gmk) {
             assert(0);
           }
         } else if (evtype == GMEvent.Type.ev_keypress) {
-          parseECode(evcode, to!string(evtype)~to!string(evidx));
+          if (auto keyName = cast(uint)evidx in evKeyNames) {
+            import std.string : replace;
+            string kn = (*keyName).replace(" ", "_");
+            parseECode(evcode, to!string(evtype)~"_"~kn);
+          } else {
+            parseECode(evcode, to!string(evtype)~"_vcode_"~to!string(evidx));
+          }
         } else if (evtype == GMEvent.Type.ev_keyboard) {
           parseECode(evcode, to!string(evtype)~to!string(evidx));
         } else if (evtype == GMEvent.Type.ev_mouse) {

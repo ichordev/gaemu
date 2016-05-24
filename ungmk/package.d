@@ -12,6 +12,103 @@ import arsd.color;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
+static immutable string[uint] evKeyNames;
+
+shared static this () {
+  evKeyNames[37] = "left";
+  evKeyNames[39] = "right";
+  evKeyNames[38] = "up";
+  evKeyNames[40] = "down";
+
+  evKeyNames[17] = "control";
+  evKeyNames[18] = "alt";
+  evKeyNames[16] = "shift";
+  evKeyNames[32] = "space";
+  evKeyNames[13] = "enter";
+
+  evKeyNames[96] = "numpad 0";
+  evKeyNames[97] = "numpad 1";
+  evKeyNames[98] = "numpad 2";
+  evKeyNames[99] = "numpad 3";
+  evKeyNames[100] = "numpad 4";
+  evKeyNames[101] = "numpad 5";
+  evKeyNames[102] = "numpad 6";
+  evKeyNames[103] = "numpad 7";
+  evKeyNames[104] = "numpad 8";
+  evKeyNames[105] = "numpad 9";
+
+  evKeyNames[111] = "numpad divide";
+  evKeyNames[106] = "numpad multiply";
+  evKeyNames[109] = "numpad subtract";
+  evKeyNames[107] = "numpad add";
+  evKeyNames[110] = "numpad decimal";
+
+  evKeyNames[48] = "0";
+  evKeyNames[49] = "1";
+  evKeyNames[50] = "2";
+  evKeyNames[51] = "3";
+  evKeyNames[52] = "4";
+  evKeyNames[53] = "5";
+  evKeyNames[54] = "6";
+  evKeyNames[55] = "7";
+  evKeyNames[56] = "8";
+  evKeyNames[57] = "9";
+
+  evKeyNames[65] = "A";
+  evKeyNames[66] = "B";
+  evKeyNames[67] = "C";
+  evKeyNames[68] = "D";
+  evKeyNames[69] = "E";
+  evKeyNames[70] = "F";
+  evKeyNames[71] = "G";
+  evKeyNames[72] = "H";
+  evKeyNames[73] = "I";
+  evKeyNames[74] = "J";
+  evKeyNames[75] = "K";
+  evKeyNames[76] = "L";
+  evKeyNames[77] = "M";
+  evKeyNames[78] = "N";
+  evKeyNames[79] = "O";
+  evKeyNames[80] = "P";
+  evKeyNames[81] = "Q";
+  evKeyNames[82] = "R";
+  evKeyNames[83] = "S";
+  evKeyNames[84] = "T";
+  evKeyNames[85] = "U";
+  evKeyNames[86] = "V";
+  evKeyNames[87] = "W";
+  evKeyNames[88] = "X";
+  evKeyNames[89] = "Y";
+  evKeyNames[90] = "Z";
+
+  evKeyNames[112] = "f1";
+  evKeyNames[113] = "f2";
+  evKeyNames[114] = "f3";
+  evKeyNames[115] = "f4";
+  evKeyNames[116] = "f5";
+  evKeyNames[117] = "f6";
+  evKeyNames[118] = "f7";
+  evKeyNames[119] = "f8";
+  evKeyNames[120] = "f9";
+  evKeyNames[121] = "f10";
+  evKeyNames[122] = "f11";
+  evKeyNames[123] = "f12";
+
+  evKeyNames[8] = "backspace";
+  evKeyNames[27] = "escape";
+  evKeyNames[36] = "home";
+  evKeyNames[35] = "end";
+  evKeyNames[33] = "pageup";
+  evKeyNames[34] = "pagedown";
+  evKeyNames[46] = "delete";
+  evKeyNames[45] = "insert";
+
+  evKeyNames[0] = "no key";
+  evKeyNames[1] = "any key";
+}
+
+
+// ////////////////////////////////////////////////////////////////////////// //
 DateTime fromDelphiDT (double d) {
   import std.datetime;
   import core.stdc.math : modf;
