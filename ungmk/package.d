@@ -13,8 +13,11 @@ import arsd.color;
 
 // ////////////////////////////////////////////////////////////////////////// //
 static immutable string[uint] evKeyNames;
+static immutable string[uint] evMouseNames;
+static immutable string[uint] evOtherNames;
 
 shared static this () {
+  // keys
   evKeyNames[37] = "left";
   evKeyNames[39] = "right";
   evKeyNames[38] = "up";
@@ -105,6 +108,104 @@ shared static this () {
 
   evKeyNames[0] = "no key";
   evKeyNames[1] = "any key";
+
+  // mouse
+  evMouseNames[0] = "mouse left button";
+  evMouseNames[1] = "mouse right button";
+  evMouseNames[2] = "mouse middle button";
+  evMouseNames[3] = "mouse no button";
+  evMouseNames[4] = "mouse left button pressed";
+  evMouseNames[5] = "mouse right button pressed";
+  evMouseNames[6] = "mouse middle button pressed";
+  evMouseNames[7] = "mouse left button released";
+  evMouseNames[8] = "mouse right button released";
+  evMouseNames[9] = "mouse middle button released";
+  evMouseNames[10] = "mouse enter";
+  evMouseNames[11] = "mouse leave";
+  evMouseNames[16] = "joystick 1 left";
+  evMouseNames[17] = "joystick 1 right";
+  evMouseNames[18] = "joystick 1 up";
+  evMouseNames[19] = "joystick 1 down";
+  evMouseNames[21] = "joystick 1 button 1";
+  evMouseNames[22] = "joystick 1 button 2";
+  evMouseNames[23] = "joystick 1 button 3";
+  evMouseNames[24] = "joystick 1 button 4";
+  evMouseNames[25] = "joystick 1 button 5";
+  evMouseNames[26] = "joystick 1 button 6";
+  evMouseNames[27] = "joystick 1 button 7";
+  evMouseNames[28] = "joystick 1 button 8";
+  evMouseNames[31] = "joystick 2 left";
+  evMouseNames[32] = "joystick 2 right";
+  evMouseNames[33] = "joystick 2 up";
+  evMouseNames[34] = "joystick 2 down";
+  evMouseNames[36] = "joystick 2 button 1";
+  evMouseNames[37] = "joystick 2 button 2";
+  evMouseNames[38] = "joystick 2 button 3";
+  evMouseNames[39] = "joystick 2 button 4";
+  evMouseNames[40] = "joystick 2 button 5";
+  evMouseNames[41] = "joystick 2 button 6";
+  evMouseNames[42] = "joystick 2 button 7";
+  evMouseNames[43] = "joystick 2 button 8";
+  evMouseNames[50] = "mouse global left button";
+  evMouseNames[51] = "mouse global right button";
+  evMouseNames[52] = "mouse global middle button";
+  evMouseNames[53] = "mouse global left pressed";
+  evMouseNames[54] = "mouse global right pressed";
+  evMouseNames[55] = "mouse global middle pressed";
+  evMouseNames[56] = "mouse global left released";
+  evMouseNames[57] = "mouse global right released";
+  evMouseNames[58] = "mouse global middle released";
+  evMouseNames[60] = "mouse wheel up";
+  evMouseNames[61] = "mouse wheel down";
+
+  // other
+  evOtherNames[0] = "outside room";
+  evOtherNames[1] = "intersect boundary";
+  evOtherNames[2] = "game start";
+  evOtherNames[3] = "game end";
+  evOtherNames[4] = "room start";
+  evOtherNames[5] = "room end";
+  evOtherNames[6] = "no more lives";
+  evOtherNames[7] = "animation end";
+  evOtherNames[8] = "end of path";
+  evOtherNames[9] = "no more health";
+
+  evOtherNames[10] = "user 0";
+  evOtherNames[11] = "user 1";
+  evOtherNames[12] = "user 2";
+  evOtherNames[13] = "user 3";
+  evOtherNames[14] = "user 4";
+  evOtherNames[15] = "user 5";
+  evOtherNames[16] = "user 6";
+  evOtherNames[17] = "user 7";
+  evOtherNames[18] = "user 8";
+  evOtherNames[19] = "user 9";
+  evOtherNames[20] = "user 10";
+  evOtherNames[21] = "user 11";
+  evOtherNames[22] = "user 12";
+  evOtherNames[23] = "user 13";
+  evOtherNames[24] = "user 14";
+  evOtherNames[25] = "user 15";
+
+  evOtherNames[30] = "close button";
+
+  evOtherNames[40] = "outside view 0";
+  evOtherNames[41] = "outside view 1";
+  evOtherNames[42] = "outside view 2";
+  evOtherNames[43] = "outside view 3";
+  evOtherNames[44] = "outside view 4";
+  evOtherNames[45] = "outside view 5";
+  evOtherNames[46] = "outside view 6";
+  evOtherNames[47] = "outside view 7";
+
+  evOtherNames[50] = "boundary view 0";
+  evOtherNames[51] = "boundary view 1";
+  evOtherNames[52] = "boundary view 2";
+  evOtherNames[53] = "boundary view 3";
+  evOtherNames[54] = "boundary view 4";
+  evOtherNames[55] = "boundary view 5";
+  evOtherNames[56] = "boundary view 6";
+  evOtherNames[57] = "boundary view 7";
 }
 
 
