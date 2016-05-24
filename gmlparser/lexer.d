@@ -16,16 +16,15 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 module gmlparser.lexer is aliced;
-private:
 
-public import gmlparser.tokens;
-private import iv.strex; // for rdmd
+import gmlparser.tokens;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
 public struct Loc {
   string file;
   int line, col;
+  uint tpos;
 
   string toString () const { import std.string : format; return "%s (%s,%s)".format(file, line, col); }
   string toStringNoFile () const { import std.string : format; return "(%s,%s)".format(line, col); }
@@ -34,10 +33,10 @@ public struct Loc {
 
 // ////////////////////////////////////////////////////////////////////////// //
 public class ErrorAt : Exception {
+  Loc loc;
+
   this (string msg, Throwable next=null, string file=__FILE__, usize line=__LINE__) pure nothrow @safe @nogc { super(msg, file, line, next); }
   this (in Loc aloc, string msg, Throwable next=null, string file=__FILE__, usize line=__LINE__) pure nothrow @safe @nogc { loc = aloc; super(msg, file, line, next); }
-
-  Loc loc;
 }
 
 
@@ -53,14 +52,16 @@ public:
     Spec,
   }
 
+private:
+  const(char)[] tkstr;
+
 public:
-  Loc loc;
+  Loc loc, eloc; // token start, token end (after last char)
   Type type = Type.EOF; // token type
   union {
     Keyword kw;
     float num;
   }
-  const(char)[] tstr;
 
 @safe:
   void mustbeType (Token.Type tp, string msg="identifier expected", string file=__FILE__, usize line=__LINE__) {
@@ -73,17 +74,22 @@ public:
 
   string toString () const @trusted {
     import std.string : format;
-    import iv.strex : quote;
     final switch (type) with (Type) {
       case EOF: return "(%s,%d): <EOF>".format(loc.line, loc.col);
-      case Kw: return "(%s,%d): kw.%s <%s>".format(loc.line, loc.col, kw, tstr);
-      case Id: return "(%s,%d): Id:%s".format(loc.line, loc.col, tstr);
-      case Str: return "(%s,%d): Str:%s".format(loc.line, loc.col, tstr.quote);
+      case Kw: return "(%s,%d): kw.%s <%s>".format(loc.line, loc.col, kw, tkstr);
+      case Id: return "(%s,%d): Id:%s".format(loc.line, loc.col, tkstr);
+      case Str: return "(%s,%d): Str:%s".format(loc.line, loc.col, Lexer.quote(tkstr));
       case Num: return "(%s,%d): Num:%s".format(loc.line, loc.col, num);
-      case Spec: return "(%s,%d): Spec:<%s>".format(loc.line, loc.col, tstr);
+      case Spec: return "(%s,%d): Spec:<%s>".format(loc.line, loc.col, tkstr);
     }
     assert(0);
   }
+
+nothrow:
+  // get immutable string
+  // this converts id to `string` via `.idup`, use with caution!
+  // `.idup` is used to not anchor the whole source string
+  @property string istr () { pragma(inline, true); return (tkstr.length ? tkstr.idup : null); }
 
 const pure nothrow @nogc:
   bool opEquals (Keyword akw) { pragma(inline, true); return (type == Type.Kw && kw == akw); }
@@ -91,6 +97,7 @@ const pure nothrow @nogc:
   bool isKw () { pragma(inline, true); return (type == Type.Kw); }
 
 @property:
+  const(char)[] str () { pragma(inline, true); return tkstr; }
   Keyword Kw () { pragma(inline, true); return (type == Type.Kw ? kw : Keyword.NoKW); }
   bool isId () { pragma(inline, true); return (type == Type.Id); }
   bool isStr () { pragma(inline, true); return (type == Type.Str); }
@@ -106,11 +113,11 @@ private:
   const(char)[] text;
   uint tpos;
   Loc cpos; // position for last `getChar()`
+  Loc pend; // end of previous token, for better error messages
   bool eof;
   bool lastWasEOL = true;
   Token[] lookup;
   Token tokeof; // will be fixed by `nextToken()`
-  bool inXmlMode = false;
 
 public:
   this(T) (const(char)[] atext, T afname=null) if (is(T : const(char)[])) {
@@ -118,6 +125,9 @@ public:
     if (afname.length > 0) { static if (is(T == string)) cpos.file = afname; else cpos.file = afname.idup; }
     tokeof.loc.file = cpos.file;
     nextToken();
+    pend.line = 1;
+    pend.col = 1;
+    pend.tpos = 0;
   }
 
   void error (string msg, string file=__FILE__, usize line=__LINE__) {
@@ -135,14 +145,11 @@ public:
     throw new ErrorAt(loc, msg, null, file, line);
   }
 
-  @property bool empty () const pure nothrow @safe @nogc { pragma(inline, true); return (lookup.length == 0); }
-  @property ref inout(Token) front () inout pure nothrow @safe @nogc { pragma(inline, true); return (lookup.length ? lookup.ptr[0] : tokeof); }
-
-  // current token's loc
-  @property auto loc () const pure nothrow @safe @nogc { pragma(inline, true); return front.loc; }
-
   void popFront () {
     if (lookup.length > 0) {
+      pend = lookup.ptr[0].eloc;
+      ++pend.col; // for better error messages
+      ++pend.tpos; // to be consistent
       foreach (immutable idx; 1..lookup.length) lookup.ptr[idx-1] = lookup.ptr[idx];
       lookup.length -= 1;
       lookup.assumeSafeAppend;
@@ -150,15 +157,22 @@ public:
     nextToken();
   }
 
-  @property bool xmlMode () const pure nothrow @safe @nogc { pragma(inline, true); return inXmlMode; }
-  @property void xmlMode (bool v) pure nothrow @safe @nogc { pragma(inline, true); inXmlMode = v; }
+  @property pure nothrow @safe @nogc {
+    bool empty () const { pragma(inline, true); return (lookup.length == 0); }
+    ref inout(Token) front () inout { pragma(inline, true); return (lookup.length ? lookup.ptr[0] : tokeof); }
+    // current token's loc
+    auto loc () const { pragma(inline, true); return front.loc; }
+    auto eloc () const { pragma(inline, true); return front.eloc; }
+    auto peloc () const { pragma(inline, true); return pend; }
+
+    bool isId () const { pragma(inline, true); return front.isId; }
+    bool isStr () const { pragma(inline, true); return front.isStr; }
+    bool isNum () const { pragma(inline, true); return front.isNum; }
+    bool isSpec () const { pragma(inline, true); return front.isSpec; }
+  }
 
   bool isKw (Keyword kw) const pure nothrow @safe @nogc { pragma(inline, true); return front.isKw(kw); }
   bool isKw () const pure nothrow @safe @nogc { pragma(inline, true); return front.isKw(); }
-  @property bool isId () const pure nothrow @safe @nogc { pragma(inline, true); return front.isId; }
-  @property bool isStr () const pure nothrow @safe @nogc { pragma(inline, true); return front.isStr; }
-  @property bool isNum () const pure nothrow @safe @nogc { pragma(inline, true); return front.isNum; }
-  @property bool isSpec () const pure nothrow @safe @nogc { pragma(inline, true); return front.isSpec; }
 
   bool opEquals (Keyword kw) const pure nothrow @safe @nogc { pragma(inline, true); return (front == kw); }
 
@@ -169,18 +183,20 @@ public:
   }
 
   // this converts id to `string` via `.idup`, use with caution!
+  // `.idup` is used to not anchor the whole source string
   string expectId (string msg="identifier expected", string file=__FILE__, usize line=__LINE__) {
     mustbeId(msg, file, line);
-    auto res = lookup[0].tstr.idup;
+    auto res = lookup[0].istr;
     popFront();
     return res;
   }
 
   // this converts id to `string` via `.idup`, use with caution!
+  // `.idup` is used to not anchor the whole source string
   string expectStr (string msg="string expected", string file=__FILE__, usize line=__LINE__) {
     //pragma(inline, true);
     mustbeStr(msg, file, line);
-    auto res = lookup[0].tstr.idup;
+    auto res = lookup[0].istr;
     popFront();
     return res;
   }
@@ -199,51 +215,28 @@ public:
 
   ref Token peek (uint dist) {
     while (!eof && lookup.length <= dist) nextToken();
-    return (dist < lookup.length ? lookup[dist] : tokeof);
+    return (dist < lookup.length ? lookup.ptr[dist] : tokeof);
   }
 
   ref Token opIndex (usize dist) { pragma(inline, true); return peek(dist); }
 
   // return loc for next `getChar()`
-  Loc nextLoc () {
+  Loc nextLoc () nothrow @safe @nogc {
     Loc res = cpos;
     if (lastWasEOL) { ++res.line; res.col = 1; } else ++res.col;
     return res;
   }
 
-  private char peekCharNaked (uint dist) nothrow @trusted @nogc {
+  char peekChar (uint dist=0) nothrow @trusted @nogc {
     pragma(inline, true);
     return (tpos+dist >= text.length ? '\0' : (text.ptr[tpos+dist] ? text.ptr[tpos+dist] : ' '));
   }
 
-  char peekChar () nothrow @trusted @nogc {
-    char ch = peekCharNaked(0);
-    if (inXmlMode && ch == '&') {
-      char[4] xname;
-      uint xpos = 0;
-      while (xpos < xname.length) {
-        ch = peekCharNaked(xpos+1);
-        if (ch == ';' || ch == '_' || !isIdStart(ch)) break;
-        xname[xpos++] = ch;
-      }
-      //{ import std.stdio; writeln("0:collected(", xpos, ":", peekCharNaked(xpos+1), "): [", xname[0..xpos], "]"); }
-      if (xpos == 0 || peekCharNaked(xpos+1) != ';') return '?';
-      switch (xname[0..xpos]) {
-        case "lt": return '<';
-        case "gt": return '>';
-        case "amp": return '&';
-        //case "quot": return '"';
-        default:
-      }
-      return '?';
-    }
-    return ch;
-  }
-
   // return char or 0
-  private char getCharNaked () nothrow @trusted @nogc {
+  char getChar () nothrow @trusted @nogc {
     if (tpos >= text.length) { tpos = text.length; eof = true; }
     if (eof) return '\0';
+    cpos.tpos = tpos;
     char ch = text.ptr[tpos++];
     if (ch == '\0') ch = ' ';
     if (lastWasEOL) { ++cpos.line; cpos.col = 1; } else ++cpos.col;
@@ -251,47 +244,19 @@ public:
     return ch;
   }
 
-  // return char or 0
-  char getChar () nothrow @trusted @nogc {
-    char ch = getCharNaked();
-    if (ch == '\0') return ch;
-    if (inXmlMode && ch == '&') {
-      // sorry for pasta
-      char[4] xname;
-      uint xpos = 0;
-      while (xpos < xname.length) {
-        ch = getCharNaked();
-        if (ch == ';' || ch == '_' || !isIdStart(ch)) break;
-        xname[xpos++] = ch;
-      }
-      //{ import std.stdio; writeln("1:collected(", ch, "): [", xname[0..xpos], "]"); }
-      if (ch != ';') return '?';
-      switch (xname[0..xpos]) {
-        case "lt": return '<';
-        case "gt": return '>';
-        case "amp": return '&';
-        //case "quot": return '"';
-        default:
-      }
-      return '?';
-    }
-    return ch;
-  }
-
   // skip blanks and comments
   //TODO: make special "comment" token(s)?
-  void skipBlanks () /*@safe*/ {
+  void skipBlanks () @safe {
     mainloop: for (;;) {
-      auto cpos = tpos;
-      char ch = peekCharNaked(0);
+      char ch = peekChar;
       if (ch == '/') {
-        switch (peekCharNaked(1)) {
+        switch (peekChar(1)) {
           case '/': // single-line comment
             do { ch = getChar(); } while (ch != 0 && ch != '\n');
             continue mainloop;
           case '*': // multiline comment
             getChar(); // skip slash
-            auto lc = this.cpos;
+            auto lc = cpos;
             getChar(); // skip star
             char pch = ' ';
             ch = ' '; // we need this
@@ -310,13 +275,16 @@ public:
     }
   }
 
-  void nextToken () {
+  private void nextToken () {
     if (eof) return;
 
     skipBlanks();
     if (peekChar == '\0') {
       eof = true;
       tokeof.loc = cpos;
+      tokeof.eloc = cpos;
+      ++tokeof.eloc.col; // for better error messages
+      ++tokeof.eloc.tpos; // to be consistent
       return;
     }
 
@@ -335,53 +303,10 @@ public:
         if (ch == 0) error(tk, "unterminated string");
         if (ch == ech) break;
       }
-      tk.tstr = text[tkspos..tpos-1]; // -1 due to eaten quote
-      lookup ~= tk;
-      return;
-    }
-
-    if (ch == 'q' && peekChar == '{') {
-      // quoted string, gml extra
-      tkspos += 2; // skip 'q' and curly
-      getChar(); // skip curly
-      if (peekChar == '\n') {
-        ++tkspos;
-        getChar();
-      }
-      int level = 1;
-      tk.type = Token.Type.Str;
-      for (;;) {
-        ch = getChar();
-        if (ch == 0) error(tk, "unterminated string");
-        if (ch == '"' || ch == '\'') {
-          char ech = ch;
-          for (;;) {
-            ch = getChar();
-            if (ch == 0) error(tk, "unterminated string");
-            if (ch == ech) break;
-          }
-        } else if (ch == '}') {
-          if (--level == 0) break;
-        } else if (ch == '{') {
-          ++level;
-        } else if (ch == '/' && peekChar == '/') {
-          while (ch && ch != '\n') ch = getChar();
-        } else if (ch == '/' && peekChar == '*') {
-          getChar();
-          for (;;) {
-            ch = getChar();
-            if (ch == 0) error(tk, "unterminated string");
-            if (ch == '*' && peekChar == '/') { getChar(); break; }
-          }
-        }
-      }
-      auto s = text[tkspos..tpos-1]; // -1 due to eaten quote
-      if (s.length > 0) {
-        usize pos = s.length;
-        while (pos > 0 && (s.ptr[pos-1] == ' ' || s.ptr[pos-1] == '\t')) --pos;
-        if (s.ptr[pos-1] == '\n') s = s[0..pos];
-      }
-      tk.tstr = s.outdentAll;
+      tk.tkstr = text[tkspos..tpos-1]; // -1 due to eaten quote
+      tk.eloc = cpos;
+      ++tk.eloc.col; // for better error messages
+      ++tk.eloc.tpos; // to be consistent
       lookup ~= tk;
       return;
     }
@@ -402,7 +327,10 @@ public:
       ch = peekChar;
       if (isIdChar(ch) || ch == '.') error(tk, "hex number expected");
       tk.num = n;
-      tk.tstr = text[tkspos..tpos];
+      tk.tkstr = text[tkspos..tpos];
+      tk.eloc = cpos;
+      ++tk.eloc.col; // for better error messages
+      ++tk.eloc.tpos; // to be consistent
       lookup ~= tk;
       return;
     }
@@ -410,8 +338,8 @@ public:
     // number
     if (isDigit(ch) || (ch == '.' && isDigit(peekChar))) {
       float n = 0;
-      if (ch != '.') n = ch-'0';
       tk.type = Token.Type.Num;
+      if (ch != '.') n = ch-'0';
       if (ch != '.') {
         // integral part
         for (;;) {
@@ -452,7 +380,10 @@ public:
         }
       }
       tk.num = n;
-      tk.tstr = text[tkspos..tpos];
+      tk.tkstr = text[tkspos..tpos];
+      tk.eloc = cpos;
+      ++tk.eloc.col; // for better error messages
+      ++tk.eloc.tpos; // to be consistent
       ch = peekChar;
       if (isIdChar(ch) || ch == '.') error(tk, "invalid number");
       lookup ~= tk;
@@ -463,8 +394,11 @@ public:
     if (isIdStart(ch)) {
       tk.type = Token.Type.Id;
       while (isIdChar(peekChar)) getChar();
-      tk.tstr = text[tkspos..tpos];
-      if (auto kw = tk.tstr in keywords) {
+      tk.tkstr = text[tkspos..tpos];
+      tk.eloc = cpos;
+      ++tk.eloc.col; // for better error messages
+      ++tk.eloc.tpos; // to be consistent
+      if (auto kw = tk.tkstr in keywords) {
         tk.type = Token.Type.Kw;
         tk.kw = *kw;
       }
@@ -478,11 +412,8 @@ public:
     if (auto xkw = dbuf[0..1] in keywords) {
       tk.type = Token.Type.Kw;
       tk.kw = *xkw;
-      //{ import std.stdio; writeln("=== 0:ch:<", ch, ">; pc:<", peekChar, ">; pcn:<", peekCharNaked(0), "> ==="); }
       foreach (uint dpos; 1..dbuf.length) {
-        //{ import std.stdio; writeln("=== ", dpos, ":pc:<", peekChar, ">; pcn:<", peekCharNaked(0), "> ==="); }
         dbuf[dpos] = peekChar;
-        //{ import std.stdio; writeln("=== ", dpos, ":tk:", dbuf[0..dpos+1], " ==="); }
         if (auto kw = dbuf[0..dpos+1] in keywords) {
           tk.type = Token.Type.Kw;
           tk.kw = *kw;
@@ -494,7 +425,10 @@ public:
     } else {
       tk.type = Token.Type.Spec;
     }
-    tk.tstr = text[tkspos..tpos];
+    tk.tkstr = text[tkspos..tpos];
+    tk.eloc = cpos;
+    ++tk.eloc.col; // for better error messages
+    ++tk.eloc.tpos; // to be consistent
     lookup ~= tk;
   }
 
@@ -626,6 +560,18 @@ static:
     }
     if (prev == Prev.Nothing) return `""`;
     if (prev == Prev.Char) res.put('"');
+    return res.data;
+  }
+
+  /// quote string: append double quotes, screen all special chars;
+  /// so quoted string forms valid D string literal.
+  /// allocates.
+  string quote (const(char)[] s) {
+    import std.array : appender;
+    import std.format : formatElement, FormatSpec;
+    auto res = appender!string();
+    FormatSpec!char fspc; // defaults to 's'
+    formatElement(res, s, fspc);
     return res.data;
   }
 }

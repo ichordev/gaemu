@@ -23,13 +23,18 @@ import gmlparser.tokens;
 
 
 final class Parser {
-  bool strict = true;
+  bool strict = false;
   bool warnings = false;
   Lexer lex;
   Node curbreak, curcont; // current nodes for `break` and `continue`
 
-  this (Lexer alex, bool astrict=true) {
+  this (Lexer alex, bool astrict=false) {
     lex = alex;
+    strict = astrict;
+  }
+
+  this(T) (const(char)[] atext, T afname, bool astrict=false) if (is(T : const(char)[])) {
+    lex = new Lexer(atext, afname);
     strict = astrict;
   }
 
@@ -55,12 +60,13 @@ final class Parser {
             auto r = mixin(me~"(stopOnAss)");
             assert(r !is null);
             // hacks
-                 static if (T[idx] == Keyword.Ass) alias tp = NodeBinaryEqu;
-            else static if (T[idx] == Keyword.And) alias tp = NodeBinaryLogAnd;
-            else static if (T[idx] == Keyword.Or) alias tp = NodeBinaryLogOr;
-            else static if (T[idx] == Keyword.Xor) alias tp = NodeBinaryLogXor;
-            else alias tp = T[idx+1];
+                 static if (T[idx] == Keyword.Ass) { enum textual = true; alias tp = NodeBinaryEqu; }
+            else static if (T[idx] == Keyword.And) { enum textual = true; alias tp = NodeBinaryLogAnd; }
+            else static if (T[idx] == Keyword.Or) { enum textual = true; alias tp = NodeBinaryLogOr; }
+            else static if (T[idx] == Keyword.Xor) { enum textual = true; alias tp = NodeBinaryLogXor; }
+            else { enum textual = false; alias tp = T[idx+1]; }
             e = new tp(e, r);
+            e.textual = textual;
             e.loc = loc;
             assert(e !is null);
             continue mainloop;
@@ -105,7 +111,7 @@ final class Parser {
     // literals and id
     switch (lex.front.type) {
       case Token.Type.Num: auto n = lex.front.num; lex.popFront(); return new NodeLiteralNum(loc, n);
-      case Token.Type.Str: auto n = lex.front.tstr.idup; lex.popFront(); return new NodeLiteralString(loc, n);
+      case Token.Type.Str: auto n = lex.front.istr; lex.popFront(); return new NodeLiteralString(loc, n);
       case Token.Type.Id: return new NodeId(loc, lex.expectId);
       default: break;
     }
@@ -118,23 +124,21 @@ final class Parser {
       return res;
     }
 
-    // `true`, `false` and `null`
+    // `true`, `false`, and other funny keywords
     if (lex.eatKw(Keyword.True)) return new NodeLiteralNum(loc, 1);
     if (lex.eatKw(Keyword.False)) return new NodeLiteralNum(loc, 0);
     if (lex.eatKw(Keyword.All)) return new NodeId(loc, "all");
     if (lex.eatKw(Keyword.Noone)) return new NodeId(loc, "noone");
+    if (lex.eatKw(Keyword.Self)) return new NodeId(loc, "self");
+    if (lex.eatKw(Keyword.Other)) return new NodeId(loc, "other");
+    if (lex.eatKw(Keyword.Global)) return new NodeId(loc, "global");
     if (lex.eatKw(Keyword.Pi)) { import std.math : PI; return new NodeLiteralNum(loc, PI); }
-
-    if (lex.eatKw(Keyword.Global)) {
-      lex.expect(Keyword.Dot);
-      auto id = lex.expectId;
-      auto res = new NodeGlobal(loc, id);
-      //{ import std.stdio; writeln("GLB at ", loc, ": ", res.toString); }
-      return res;
-    }
 
     // global scope
     if (lex.eatKw(Keyword.Dot)) errorAt(loc, "no global scope access is supported yet");
+
+    if (lex.isKw(Keyword.PlusPlus)) errorAt(loc, "GML doesn't have '++'");
+    if (lex.isKw(Keyword.MinusMinus)) errorAt(loc, "GML doesn't have '--'");
 
     errorAt(loc, "primary expression expected");
     assert(0);
@@ -171,7 +175,7 @@ final class Parser {
     if (lex.eatKw(Keyword.Add)) return parseExprUnary();
     if (lex.eatKw(Keyword.Sub)) return new NodeUnaryNeg(parseExprUnary(), loc);
     if (lex.eatKw(Keyword.LogNot)) return new NodeUnaryNot(parseExprUnary(), loc);
-    if (lex.eatKw(Keyword.Not)) return new NodeUnaryNot(parseExprUnary(), loc);
+    if (lex.eatKw(Keyword.Not)) { auto res = new NodeUnaryNot(parseExprUnary(), loc); res.textual = true; return res; }
     if (lex.eatKw(Keyword.BitNeg)) return new NodeUnaryBitNeg(parseExprUnary(), loc);
 
     auto res = parseExprPrimary();
@@ -189,14 +193,11 @@ final class Parser {
   mixin BuildExprBinOp!("LogOr",  "LogAnd",  "LogOr", "LogXor", "Or", "Xor");
 
   Node parseExpr () {
-    auto res = parseExprLogOr(false);
-    checkDots(res);
-    return res;
+    return parseExprLogOr(false);
   }
 
   // this can be assign expression, check it
   Node parseAssExpr () {
-    //FIXME: this cannot parse things like `(n).a = b`;
     auto e = parseExprLogOr(true); // stop on assign
     auto loc = lex.loc;
     if (lex.eatKw(Keyword.Ass)) return new NodeBinaryAss(e, parseExpr(), loc);
@@ -225,7 +226,7 @@ final class Parser {
       if (strict) {
         lex.expect(Keyword.Semi);
       } else {
-        warning(lex.loc, "';' missing");
+        warning(lex.peloc, "';' missing");
       }
     }
   }
@@ -247,12 +248,9 @@ final class Parser {
   Node parseCodeBlock () {
     auto loc = lex.loc;
     lex.expect(Keyword.LCurly);
-    // "{}" is just an empty statement
-    if (lex.eatKw(Keyword.RCurly)) return new NodeStatementEmpty(loc);
     auto blk = new NodeBlock(loc);
-    while (!lex.isKw(Keyword.RCurly)) {
-      blk.addStatement(parseStatement());
-    }
+    // "{}" is just an empty statement, but we'll still create empty code block
+    while (!lex.isKw(Keyword.RCurly)) blk.addStatement(parseStatement());
     lex.expect(Keyword.RCurly);
     return blk;
   }
@@ -277,13 +275,12 @@ final class Parser {
     auto loc = lex.loc;
     lex.expect(Keyword.If);
     auto ec = exprInParens();
-    //bool isBlock = lex.isKw(Keyword.LCurly);
     auto et = parseStatement();
     if (!strict && lex.isKw(Keyword.Semi)) {
       int pos = 1;
       while (lex.peek(pos).isKw(Keyword.Semi)) ++pos;
       if (lex.peek(pos).isKw(Keyword.Else)) {
-        if (strict) throw new ErrorAt(lex.loc, "unexpected ';'");
+        if (strict) throw new ErrorAt(lex.peek(pos-1).loc, "unexpected ';'");
         warning(lex.loc, "extra ';'");
         while (lex.eatKw(Keyword.Semi)) {}
       }
@@ -343,19 +340,6 @@ final class Parser {
     return res;
   }
 
-  Node parseWithObject () {
-    auto loc = lex.loc;
-    lex.expect(Keyword.With_object);
-    auto wc = exprInParens();
-    auto res = new NodeWithObject(wc, loc);
-    auto oldbreak = curbreak;
-    auto oldcont = curcont;
-    scope(exit) { curbreak = oldbreak; curcont = oldcont; }
-    curbreak = curcont = res;
-    res.ebody = parseStatement();
-    return res;
-  }
-
   Node parseVar () {
     auto loc = lex.loc;
     bool gvar = false;
@@ -368,8 +352,9 @@ final class Parser {
     auto vd = new NodeVarDecl(loc);
     vd.asGlobal = gvar;
     while (lex.isId) {
-      if (vd.hasVar(lex.front.tstr)) lex.error("duplicate variable name '"~lex.front.tstr.idup~"'");
+      //if (vd.hasVar(lex.front.tstr)) lex.error("duplicate variable name '"~lex.front.istr~"'");
       vd.names ~= lex.expectId;
+      if (lex.isKw(Keyword.Ass)) lex.error("GML doesn't support variable initialization");
       if (!lex.eatKw(Keyword.Comma)) break;
     }
     endOfStatement();
@@ -460,7 +445,10 @@ final class Parser {
     // var declaration
     auto loc = lex.loc;
     // empty statement
-    if (lex.eatKw(Keyword.Semi)) return new NodeStatementEmpty(loc);
+    if (lex.eatKw(Keyword.Semi)) {
+      warning(loc, "use '{}' instead of ';' for empty statement");
+      return new NodeStatementEmpty(loc);
+    }
     // block statement
     if (lex.isKw(Keyword.LCurly)) return parseCodeBlock();
     // operators and other keyworded things
@@ -480,7 +468,6 @@ final class Parser {
         case Keyword.Var: return parseVar();
         case Keyword.Globalvar: return parseVar();
         case Keyword.With: return parseWith();
-        case Keyword.With_object: lex.error("`with_object` is deprecated"); return null; //return parseWithObject();
         case Keyword.Case: lex.error("you cannot use `case` here"); return null;
         case Keyword.Default: lex.error("you cannot use `default` here"); return null;
         case Keyword.LParen:
@@ -490,6 +477,8 @@ final class Parser {
         case Keyword.False:
         case Keyword.All:
         case Keyword.Noone:
+        case Keyword.Self:
+        case Keyword.Other:
         case Keyword.Global:
           goto estat;
         default:
@@ -504,142 +493,30 @@ final class Parser {
     return res;
   }
 
+  // whole input
   NodeFunc parseFunctionBody (NodeFunc fn) {
     fn.ebody = new NodeBlock(lex.loc);
     while (!lex.empty) fn.ebody.addStatement(parseStatement());
     return fn;
   }
 
-  // ////////////////////////////////////////////////////////////////////// //
-  private void checkRefLoadX (Node nn, bool wasDot) {
-    return selectNode!(void)(nn,
-      (NodeId n) {},
-      (NodeGlobal n) {},
-      (NodeDot n) {
-        if (wasDot) {
-          throw new ErrorAt(nn.loc, "too many dots");
-        }
-        checkRefLoadX(n.e, true);
-      },
-      (NodeIndex n) {
-        checkDots(n.ei0);
-        checkDots(n.ei1);
-        checkRefLoadX(n.e, wasDot);
-      },
-      () { assert(0, "internal error in checkRefLoad: "~typeid(nn).name); },
-    );
+  // whole input
+  NodeFunc parseFunctionBody (string name) {
+    auto fn = new NodeFunc(name, lex.loc);
+    fn.ebody = new NodeBlock(lex.loc);
+    while (!lex.empty) fn.ebody.addStatement(parseStatement());
+    return fn;
   }
 
-  private void checkRefLoad (Node nn) {
-    try {
-      checkRefLoadX(nn, false);
-    } catch (ErrorAt e) {
-      { import std.stdio; writeln("DOTS at ", nn.loc, ": ", nn.toString); }
-      throw e;
-    }
-  }
-
-  void checkDots (Node nn) {
-    if (nn is null) return;
-    //{ import std.stdio; writeln("node: ", typeid(nn).name, " : ", (cast(NodeStatement)nn !is null)); }
-    if (cast(NodeStatement)nn) {
-      selectNode!(void)(nn,
-        (NodeVarDecl n) {
-        },
-        (NodeBlock n) {
-          foreach (Node st; n.stats) checkDots(st);
-        },
-        (NodeStatementEmpty n) {
-        },
-        (NodeStatementExpr n) {
-          checkDots(n.e);
-        },
-        (NodeReturn n) {
-          checkDots(n.e);
-        },
-        (NodeWith n) {
-          checkDots(n.e);
-          checkDots(n.ebody);
-        },
-        (NodeWithObject n) {
-          checkDots(n.e);
-          checkDots(n.ebody);
-        },
-        (NodeIf n) {
-          checkDots(n.ec);
-          checkDots(n.et);
-          checkDots(n.ef);
-        },
-        (NodeStatementBreak n) {
-        },
-        (NodeStatementContinue n) {
-        },
-        (NodeFor n) {
-          checkDots(n.einit);
-          checkDots(n.econd);
-          checkDots(n.enext);
-          checkDots(n.ebody);
-        },
-        (NodeWhile n) {
-          checkDots(n.econd);
-          checkDots(n.ebody);
-        },
-        (NodeDoUntil n) {
-          checkDots(n.econd);
-          checkDots(n.ebody);
-        },
-        (NodeRepeat n) {
-          checkDots(n.ecount);
-          checkDots(n.ebody);
-        },
-        (NodeSwitch n) {
-          checkDots(n.e);
-          foreach (ref ci; n.cases) {
-            checkDots(ci.e);
-            checkDots(ci.st);
-          }
-        },
-        () { assert(0, "unimplemented node: "~typeid(nn).name); },
-      );
-    } else {
-      selectNode!(void)(nn,
-        (NodeLiteralString n) {},
-        (NodeLiteralNum n) {},
-        (NodeUnaryNot n) { checkDots(n.e); },
-        (NodeUnaryNeg n) { checkDots(n.e); },
-        (NodeUnaryBitNeg n) { checkDots(n.e); },
-        (NodeBinaryAdd n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinarySub n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryMul n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryMod n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryDiv n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryRDiv n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryBitOr n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryBitXor n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryBitAnd n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryLShift n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryRShift n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryLess n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryLessEqu n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryGreat n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryGreatEqu n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryEqu n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryNotEqu n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryLogOr n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryLogAnd n) { checkDots(n.el); checkDots(n.er); },
-        (NodeBinaryLogXor n) { checkDots(n.el); checkDots(n.er); },
-        (NodeFCall n) {
-          checkDots(n.fe);
-          foreach (immutable idx, Node a; n.args) checkDots(a);
-        },
-        (NodeId n) { checkRefLoad(n); },
-        (NodeGlobal n) { checkRefLoad(n); },
-        (NodeDot n) { checkRefLoad(n); },
-        (NodeIndex n) { checkRefLoad(n); },
-        // assign
-        (NodeBinaryAss n) { checkRefLoad(n.el); checkDots(n.er); },
-        () { assert(0, "unimplemented node: "~typeid(nn).name); },
-      );
-    }
+  // from `function` keyword
+  NodeFunc parseFunction () {
+    auto loc = lex.loc;
+    lex.expect(Keyword.Function);
+    if (!lex.isId) lex.error("function name expected");
+    string name = lex.expectId;
+    auto fn = new NodeFunc(name, lex.loc);
+    fn.ebody = cast(NodeBlock)parseCodeBlock();
+    assert(fn.ebody !is null);
+    return fn;
   }
 }

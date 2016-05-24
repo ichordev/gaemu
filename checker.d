@@ -1,67 +1,33 @@
 module checker is aliced;
 
+import std.stdio;
+
 import gmlparser;
+import ungmk;
 
 
-void loadScript (string name, bool warnings=false) {
+// ////////////////////////////////////////////////////////////////////////// //
+NodeFunc[] loadScript (string filename, bool warnings=true) {
   import std.algorithm : startsWith;
   import std.file : readText;
   import std.path : baseName, extension;
   import std.stdio;
   import std.string : replace;
 
-  bool asXml = false;
-  auto s = readText(name);
-  s = s.replace("\r\n", "\n").replace("\r", "\n");
-  if (s.startsWith("<?xml")) {
-    import std.string : indexOf;
-    auto pos = s.indexOf(`<argument kind="STRING">`);
-    if (pos < 0) assert(0, "wtf?!");
-    s = s[pos+24..$];
-    pos = s.indexOf(`</argument>`);
-    if (pos < 0) assert(0, "wtfx?!");
-    s = s[0..pos];
-    asXml = true;
-  }
+  auto s = readText(filename);
 
-  auto lex = new Lexer(s, name);
-  lex.xmlMode = asXml;
-  auto parser = new Parser(lex);
-  parser.strict = false;
+  NodeFunc[] res;
+  auto parser = new Parser(s, filename);
   parser.warnings = warnings;
-  bool asGmx = (name.extension == ".gmx");
+  bool asGmx = (filename.extension == ".gmx");
   try {
     if (asGmx) {
-      while (lex.isKw(Keyword.Function)) {
-        auto loc = lex.loc;
-        lex.expect(Keyword.Function);
-        string fname = lex.expectId;
-        auto fnode = new NodeFunc(fname, loc);
-        Node st;
-        if (lex.isKw(Keyword.LCurly)) {
-          st = parser.parseCodeBlock();
-        } else {
-          st = parser.parseStatement();
-        }
-        if (auto b = cast(NodeBlock)st) {
-          fnode.ebody = b;
-        } else {
-          auto blk = new NodeBlock(st.loc);
-          blk.addStatement(st);
-          fnode.ebody = blk;
-        }
-        //if (exec.hasFunction(fnode.name)) throw new Exception("duplicate script '"~fnode.name~"' (from file '"~name~"')");
-        exec[fnode.name] = fnode;
-      }
+      while (!parser.lex.empty) res ~= parser.parseFunction();
     } else {
-      string scname = name.baseName(".gml");
-      auto n = parser.parseFunctionBody(new NodeFunc(scname, lex.loc));
-      //writeln(n.toString);
-      //if (exec.hasFunction(n.name)) throw new Exception("duplicate script '"~n.name~"'");
-      exec[n.name] = n;
+      string scname = filename.baseName(".gml");
+      res ~= parser.parseFunctionBody(scname);
     }
-    if (!lex.empty) throw new Exception("script '"~name~"' has some extra code");
-    return;
+    assert(parser.lex.empty);
   } catch (ErrorAt e) {
     import std.stdio;
     writeln("ERROR at ", e.loc, ": ", e.msg);
@@ -72,16 +38,16 @@ void loadScript (string name, bool warnings=false) {
     writeln(typeid(e).name, "@", e.file, "(", e.line, "): ", e.msg);
     assert(0);
   }
+  return res;
 }
 
 
-NodeFunc parseScript (string code, string scname, bool strict=true) {
-  auto lex = new Lexer(code, scname);
-  lex.xmlMode = false;
-  auto parser = new Parser(lex, strict);
-  //parser.warnings = true;
+// ////////////////////////////////////////////////////////////////////////// //
+NodeFunc parseScript (string code, string scname, bool warnings=true) {
+  auto parser = new Parser(code, scname);
+  parser.warnings = warnings;
   try {
-    return parser.parseFunctionBody(new NodeFunc(scname, lex.loc));
+    return parser.parseFunctionBody(scname);
   } catch (ErrorAt e) {
     import std.stdio;
     writeln("ERROR at ", e.loc, ": ", e.msg);
@@ -94,4 +60,206 @@ NodeFunc parseScript (string code, string scname, bool strict=true) {
     throw e;
   }
   assert(0);
+}
+
+
+// ////////////////////////////////////////////////////////////////////////// //
+NodeFunc[] gmkLoadScripts (Gmk gmk) {
+  NodeFunc[] funcs;
+
+  import std.conv : to;
+
+  void setupObject (GMObject obj, GMObject oparent) {
+    string parent = (oparent !is null ? oparent.name : null);
+
+    void parseECode (ref string evcode, string evname) {
+      import iv.strex;
+      import std.string : replace;
+      scope(exit) evcode = null;
+      evcode = evcode.replace("\r\n", "\n").replace("\r", "\n").outdentAll;
+      //while (evcode.length && evcode[0] <= ' ') evcode = evcode[1..$];
+      while (evcode.length && evcode[$-1] <= ' ') evcode = evcode[0..$-1];
+      if (evcode.length) {
+        auto fn = evcode.parseScript(obj.name~":"~evname);
+        if (!isEmpty(fn)) {
+          if (hasReturn(fn)) throw new Exception("event '"~evname~"' for object '"~obj.name~"' contains `return`");
+          funcs ~= fn;
+        }
+      }
+    }
+
+    void createEvent (GMEvent.Type evtype) {
+      import std.conv : to;
+      string evcode;
+      foreach (immutable evidx, auto ev; obj.events[evtype]) {
+        foreach (immutable aidx, auto act; ev.actions) {
+          if (act.type == act.Type.Nothing) continue; // comment
+          if (act.kind == act.Kind.act_normal) {
+            // normal action
+            if (act.type == act.Type.Function) {
+              if (act.funcname == "action_inherited") {
+                assert(parent.length);
+                evcode ~= "_action_inherited(\""~to!string(evtype)~"\", \""~parent~"\");\n";
+                continue;
+              }
+              if (act.funcname == "action_kill_object") {
+                evcode ~= "_action_kill_object();\n";
+                continue;
+              }
+              if (act.funcname == "action_execute_script") {
+                import std.conv : to;
+                if (act.argused < 1 || act.argtypes[0] != act.ArgType.t_script) assert(0, "invalid action function arguments: '"~act.funcname~"'");
+                string s = gmk.scriptByNum(to!int(act.argvals[0])).name~"(";
+                foreach (immutable idx; 1..act.argused) {
+                  if (act.argtypes[idx] != act.ArgType.t_expr) assert(0, "invalid action type for execscript: "~to!string(act.argtypes[idx]));
+                  if (idx != 1) s ~= ", ";
+                  s ~= act.argvals[idx];
+                }
+                s ~= "); // action_execute_script\n";
+                evcode ~= s;
+                continue;
+              }
+              assert(0, "invalid action function: '"~act.funcname~"'");
+            }
+            assert(0, "invalid normal action type");
+          }
+          if (act.kind == act.Kind.act_code) {
+            // script
+            if (act.type == act.Type.Code) {
+              if (act.argused < 1 || act.argtypes[0] != act.ArgType.t_string) {
+                import std.conv : to;
+                assert(0, "invalid action code arguments for '"~obj.name~"': used="~to!string(act.argused)~"; kinds="~to!string(act.argtypes));
+              }
+              import std.string : format;
+              evcode ~= act.argvals[0];
+              while (evcode.length && evcode[$-1] <= ' ') evcode = evcode[0..$-1];
+              if (evcode.length > 0) evcode ~= "\n";
+              continue;
+            }
+            assert(0, "invalid code action type: "~to!string(act.type));
+          }
+          if (act.kind == act.Kind.act_var) {
+            // variable assignment
+            if (act.argused != 2 || act.argtypes[0] != act.ArgType.t_string || act.argtypes[1] != act.ArgType.t_expr) {
+              assert(0, "invalid action code arguments for '"~obj.name~"': used="~to!string(act.argused)~"; kinds="~to!string(act.argtypes));
+            }
+            evcode ~= act.argvals[0]~" = "~act.argvals[1]~"; // act_var";
+            continue;
+          }
+          {
+            assert(0, "FUUUCK: "~to!string(act.kind));
+          }
+        }
+        if (evtype == GMEvent.Type.ev_alarm) {
+          parseECode(evcode, to!string(evtype)~":"~to!string(evidx));
+          //{ import std.stdio; writeln("alarm #", evidx, " for '", obj.name, "'"); }
+        } else if (evtype == GMEvent.Type.ev_step) {
+          if (evidx == 0) {
+            // normal
+            parseECode(evcode, to!string(evtype));
+          } else if (evidx == 1) {
+            // begin
+            parseECode(evcode, to!string(evtype)~":begin");
+          } else if (evidx == 2) {
+            // end
+            parseECode(evcode, to!string(evtype)~":end");
+          } else {
+            assert(0);
+          }
+        } else {
+          if (evidx > 0) {
+            { import std.stdio; writeln("fuck! ", evtype, " #", evidx, " for '", obj.name, "'"); }
+            assert(0);
+          }
+          parseECode(evcode, to!string(evtype));
+        }
+      }
+    }
+
+    foreach (immutable evtype; 0..GMEvent.Type.max+1) {
+      createEvent(cast(GMEvent.Type)evtype);
+    }
+    //if (obj.name != "oGamepad") createEvent(GMEvent.Type.ev_step);
+  }
+
+  void processChildren (string parent) {
+    auto po = gmk.objByName(parent);
+    if (po is null) assert(0, "wtf?! "~parent);
+    gmk.forEachObject((o) {
+      if (o.parentobjidx == po.idx) {
+        setupObject(o, po);
+        processChildren(o.name);
+      }
+      return false;
+    });
+  }
+
+  // objects
+  gmk.forEachObject((o) {
+    if (o.parentobjidx < 0) {
+      setupObject(o, null);
+      processChildren(o.name);
+    }
+    return false;
+  });
+
+  // scripts
+  gmk.forEachScript((sc) {
+    assert(sc.name.length);
+    NodeFunc fn = sc.code.parseScript(sc.name);
+    assert(fn.ebody !is null);
+    funcs ~= fn;
+    return false;
+  });
+
+  return funcs;
+}
+
+
+// ////////////////////////////////////////////////////////////////////////// //
+void main (string[] args) {
+  NodeFunc[] funcs;
+
+  bool dumpFileNames = false;
+  bool styleWarnings = false;
+
+  bool nomore = false;
+  string[] scargs;
+  foreach (string fname; args[1..$]) {
+    import std.file;
+    import std.path;
+    if (nomore) {
+      scargs ~= fname;
+    } else {
+      if (fname.length == 0) continue;
+      if (fname == "--") { nomore = true; continue; }
+      if (fname == "-d") { dumpFileNames = true; continue; }
+      if (fname == "-w") { styleWarnings = true; continue; }
+      if (fname[0] == '@') {
+        if (fname.length < 2) assert(0, "gmk file?");
+        auto gmk = new Gmk(fname[1..$]);
+        funcs ~= gmkLoadScripts(gmk);
+        continue;
+      }
+      if (isDir(fname)) {
+        foreach (auto de; dirEntries(fname, "*.gm[lx]", SpanMode.breadth)) {
+          bool doit = true;
+          foreach (auto pt; pathSplitter(de.dirName)) {
+            if (pt.length && pt[0] == '_') { doit = false; break; }
+          }
+          if (doit) {
+            if (dumpFileNames) { import std.stdio; writeln("loading '", de.name, "'..."); }
+            funcs ~= loadScript(de.name, true);
+          }
+        }
+      } else {
+        if (dumpFileNames) { import std.stdio; writeln("loading '", fname, "'..."); }
+        funcs ~= loadScript(fname, true);
+      }
+    }
+  }
+
+  if (funcs.length > 1) {
+    writeln(funcs.length, " functions parsed");
+  }
 }

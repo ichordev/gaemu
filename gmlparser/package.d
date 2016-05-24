@@ -18,7 +18,7 @@
 module gmlparser;
 
 public import gmlparser.utils;
-public import gmlparser.tokens;
+//public import gmlparser.tokens;
 public import gmlparser.lexer;
 public import gmlparser.ast;
 public import gmlparser.astools;

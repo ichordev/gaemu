@@ -48,9 +48,9 @@ class Node {
   enum DontVisitMe; // mark nodes that should not be visited with this
   enum CompoundVisitor; // mark struct/class fields that should be processed by visitor with this
   enum SkipChildren = int.min;
-  mixin VisitorBones;
 
   Loc loc;
+  bool textual; // used for unary and binary nodes where, for example, "and" is used instead of "&&"
 
   this (Node n=null) { if (n !is null) loc = n.loc; }
   this (Loc aloc) { loc = aloc; }
@@ -104,7 +104,6 @@ class NodeExpr : Node {
 
 // ////////////////////////////////////////////////////////////////////////// //
 class NodeUnary : NodeExpr {
-  mixin VisitorBones;
   Node e;
 
   this (Node ae, string aname) { e = ae; super(ae, aname); }
@@ -126,7 +125,6 @@ mixin(UnaryOpMixin!("BitNeg", "~"));
 
 // ////////////////////////////////////////////////////////////////////////// //
 class NodeBinary : NodeExpr {
-  mixin VisitorBones;
   Node el, er;
 
   this (Node ael, Node aer, string aname) { el = ael; er = aer; super(ael, aname); }
@@ -201,19 +199,8 @@ class NodeId : NodeExpr {
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-// global access
-class NodeGlobal : NodeExpr {
-  mixin VisitorBones;
-
-  this (Loc aloc, string name) { super(aloc, name); }
-
-  override string toString () const { return "global."~name; }
-}
-
-
 // field access (as lvalue and as rvalue)
 class NodeDot : NodeExpr {
-  mixin VisitorBones;
   Node e; // base
 
   this (Node ae, string name) { e = ae; super(ae, name); }
@@ -229,7 +216,6 @@ class NodeDot : NodeExpr {
 // ////////////////////////////////////////////////////////////////////////// //
 // field access (as lvalue and as rvalue)
 class NodeIndex : NodeExpr {
-  mixin VisitorBones;
   Node e; // base
   Node ei0, ei1; // indicies, `ei1` can be `null`
 
@@ -249,7 +235,6 @@ class NodeIndex : NodeExpr {
 // ////////////////////////////////////////////////////////////////////////// //
 // function call
 class NodeFCall : NodeExpr {
-  mixin VisitorBones;
   Node fe; // function expression
   Node[] args;
 
@@ -278,7 +263,6 @@ class NodeStatement : Node {
 // ////////////////////////////////////////////////////////////////////////// //
 // local var
 class NodeVarDecl : NodeStatement {
-  mixin VisitorBones;
   string[] names;
   bool asGlobal;
 
@@ -303,7 +287,6 @@ class NodeVarDecl : NodeStatement {
 // ////////////////////////////////////////////////////////////////////////// //
 // statement block
 class NodeBlock : NodeStatement {
-  mixin VisitorBones;
   Node[] stats;
 
   this () {}
@@ -335,7 +318,6 @@ class NodeStatementEmpty : NodeStatement {
 // ////////////////////////////////////////////////////////////////////////// //
 // `expression` operator
 class NodeStatementExpr : NodeStatement {
-  mixin VisitorBones;
   Node e; // expression
 
   this (Node ae) { e = ae; super(ae); if (ae !is null) loc = ae.loc; }
@@ -350,7 +332,6 @@ class NodeStatementExpr : NodeStatement {
 // ////////////////////////////////////////////////////////////////////////// //
 // `return` and `exit` operators
 class NodeReturn : NodeStatement {
-  mixin VisitorBones;
   Node e; // return expression (if any); can be `null`
 
   this (Node ae) { e = ae; if (ae !is null) loc = ae.loc; }
@@ -363,7 +344,6 @@ class NodeReturn : NodeStatement {
 // ////////////////////////////////////////////////////////////////////////// //
 // `with` operator
 class NodeWith : NodeStatement {
-  mixin VisitorBones;
   Node e;
   Node ebody;
 
@@ -377,7 +357,6 @@ class NodeWith : NodeStatement {
 // ////////////////////////////////////////////////////////////////////////// //
 // `with_object` operator
 class NodeWithObject : NodeStatement {
-  mixin VisitorBones;
   Node e;
   Node ebody;
 
@@ -391,7 +370,6 @@ class NodeWithObject : NodeStatement {
 // ////////////////////////////////////////////////////////////////////////// //
 // `if` operator
 class NodeIf : NodeStatement {
-  mixin VisitorBones;
   Node ec, et, ef;
 
   this (Node aec, Node aet, Node aef) { ec = aec; et = aet; ef = aef; super(aec); }
@@ -429,7 +407,6 @@ class NodeStatementContinue : NodeStatementBreakCont {
 // ////////////////////////////////////////////////////////////////////////// //
 // `for` operator
 class NodeFor : NodeStatement {
-  mixin VisitorBones;
   Node einit, econd, enext;
   Node ebody;
 
@@ -506,13 +483,12 @@ class NodeRepeat : NodeStatement {
 // ////////////////////////////////////////////////////////////////////////// //
 // `switch` operator
 class NodeSwitch : NodeStatement {
-  mixin VisitorBones;
   static struct Case {
     Node e; // condition; `null` means "default"
     Node st; // can be `null`
   }
   Node e; // switch expression
-  @CompoundVisitor Case[] cases; // never mutate directly!
+  Case[] cases; // never mutate directly!
 
   this () {}
   this (Loc aloc) { loc = aloc; }
@@ -544,7 +520,6 @@ class NodeSwitch : NodeStatement {
 // ////////////////////////////////////////////////////////////////////////// //
 // function with body
 class NodeFunc : Node {
-  mixin VisitorBones;
   string name;
   NodeBlock ebody;
 

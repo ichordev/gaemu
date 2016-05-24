@@ -78,7 +78,6 @@ bool hasReturn (Node nn) {
         return false;
       },
       (NodeId n) => false,
-      (NodeGlobal n) => false,
       (NodeDot n) => hasReturn(n.e),
       (NodeIndex n) => (hasReturn(n.e) || hasReturn(n.ei0) || hasReturn(n.ei1)),
       (NodeFunc n) => hasReturn(n.ebody),
