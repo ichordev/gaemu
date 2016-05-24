@@ -150,13 +150,15 @@ NodeFunc[] gmkLoadScripts (Gmk gmk) {
             assert(0, "FUUUCK: "~to!string(act.kind));
           }
         }
+        string baseevname = to!string(evtype);
+        if (evidx > 0) baseevname ~= to!string(evidx);
         if (evtype == GMEvent.Type.ev_alarm) {
-          parseECode(evcode, to!string(evtype)~":"~to!string(evidx));
+          parseECode(evcode, "ev_alarm:"~to!string(ev.id));
           //{ import std.stdio; writeln("alarm #", evidx, " for '", obj.name, "'"); }
         } else if (evtype == GMEvent.Type.ev_step) {
           if (ev.id == 0) {
             // normal
-            parseECode(evcode, to!string(evtype));
+            parseECode(evcode, baseevname);
           } else if (ev.id == 1) {
             // begin
             parseECode(evcode, to!string(evtype)~":begin");
@@ -170,32 +172,32 @@ NodeFunc[] gmkLoadScripts (Gmk gmk) {
           if (auto keyName = cast(uint)ev.id in evKeyNames) {
             import std.string : replace;
             string kn = (*keyName).replace(" ", "_");
-            parseECode(evcode, to!string(evtype)~to!string(evidx)~"_"~kn);
+            parseECode(evcode, to!string(evtype)~":"~kn);
           } else {
-            parseECode(evcode, to!string(evtype)~to!string(evidx)~"_vcode_"~to!string(ev.id));
+            parseECode(evcode, to!string(evtype)~":vcode_"~to!string(ev.id));
           }
         } else if (evtype == GMEvent.Type.ev_mouse) {
           if (auto msName = cast(uint)ev.id in evMouseNames) {
             import std.string : replace;
             string kn = (*msName).replace(" ", "_");
-            parseECode(evcode, to!string(evtype)~to!string(evidx)~"_"~kn);
+            parseECode(evcode, to!string(evtype)~":"~kn);
           } else {
-            parseECode(evcode, to!string(evtype)~to!string(evidx)~"_mcode_"~to!string(ev.id));
+            parseECode(evcode, to!string(evtype)~":mcode_"~to!string(ev.id));
           }
         } else if (evtype == GMEvent.Type.ev_collision) {
           auto co = gmk.objByNum(ev.id);
           if (co is null) assert(0, "no collision object for 'ev_collision' for '"~obj.name~"'");
-          parseECode(evcode, to!string(evtype)~to!string(evidx)~"_"~co.name);
+          parseECode(evcode, to!string(evtype)~":"~co.name);
         } else if (evtype == GMEvent.Type.ev_other) {
           auto nmp = cast(uint)ev.id in evOtherNames;
           if (nmp is null) assert(0, "unknown event id "~to!string(ev.id)~" for 'ev_other' for '"~obj.name~"'");
           import std.string : replace;
           string nm = (*nmp).replace(" ", "_");
-          parseECode(evcode, to!string(evtype)~to!string(evidx)~"_"~nm);
-        } else if (evtype == GMEvent.Type.ev_draw) {
-          parseECode(evcode, to!string(evtype)~to!string(evidx));
+          parseECode(evcode, to!string(evtype)~":"~nm);
+        } else if (evtype == GMEvent.Type.ev_draw || evtype == GMEvent.Type.ev_destroy || evtype == GMEvent.Type.ev_create) {
+          parseECode(evcode, baseevname);
         } else {
-          if (evidx > 0) {
+          /*if (evidx > 0)*/ {
             { import std.stdio; writeln("fuck! ", evtype, " #", evidx, " for '", obj.name, "'"); }
             assert(0);
           }
