@@ -145,6 +145,20 @@ public:
     throw new ErrorAt(loc, msg, null, file, line);
   }
 
+  const(char)[] line (uint idx) {
+    if (idx == 0) ++idx;
+    uint pos = 0;
+    while (--idx > 0) {
+      while (pos < text.length && text.ptr[pos] != '\n') ++pos;
+      ++pos;
+    }
+    if (pos >= text.length) return null;
+    uint epos = pos;
+    while (epos < text.length && text.ptr[epos] != '\n') ++epos;
+    while (epos > pos && text.ptr[epos-1] <= ' ') --epos;
+    return text[pos..epos];
+  }
+
   void popFront () {
     if (lookup.length > 0) {
       pend = lookup.ptr[0].eloc;
@@ -283,8 +297,8 @@ public:
       eof = true;
       tokeof.loc = cpos;
       tokeof.eloc = cpos;
-      ++tokeof.eloc.col; // for better error messages
-      ++tokeof.eloc.tpos; // to be consistent
+      //++tokeof.eloc.col; // for better error messages
+      //++tokeof.eloc.tpos; // to be consistent
       return;
     }
 
@@ -305,8 +319,8 @@ public:
       }
       tk.tkstr = text[tkspos..tpos-1]; // -1 due to eaten quote
       tk.eloc = cpos;
-      ++tk.eloc.col; // for better error messages
-      ++tk.eloc.tpos; // to be consistent
+      //++tk.eloc.col; // for better error messages
+      //++tk.eloc.tpos; // to be consistent
       lookup ~= tk;
       return;
     }
@@ -329,8 +343,8 @@ public:
       tk.num = n;
       tk.tkstr = text[tkspos..tpos];
       tk.eloc = cpos;
-      ++tk.eloc.col; // for better error messages
-      ++tk.eloc.tpos; // to be consistent
+      //++tk.eloc.col; // for better error messages
+      //++tk.eloc.tpos; // to be consistent
       lookup ~= tk;
       return;
     }
@@ -382,8 +396,8 @@ public:
       tk.num = n;
       tk.tkstr = text[tkspos..tpos];
       tk.eloc = cpos;
-      ++tk.eloc.col; // for better error messages
-      ++tk.eloc.tpos; // to be consistent
+      //++tk.eloc.col; // for better error messages
+      //++tk.eloc.tpos; // to be consistent
       ch = peekChar;
       if (isIdChar(ch) || ch == '.') error(tk, "invalid number");
       lookup ~= tk;
@@ -396,8 +410,8 @@ public:
       while (isIdChar(peekChar)) getChar();
       tk.tkstr = text[tkspos..tpos];
       tk.eloc = cpos;
-      ++tk.eloc.col; // for better error messages
-      ++tk.eloc.tpos; // to be consistent
+      //++tk.eloc.col; // for better error messages
+      //++tk.eloc.tpos; // to be consistent
       if (auto kw = tk.tkstr in keywords) {
         tk.type = Token.Type.Kw;
         tk.kw = *kw;
@@ -427,8 +441,8 @@ public:
     }
     tk.tkstr = text[tkspos..tpos];
     tk.eloc = cpos;
-    ++tk.eloc.col; // for better error messages
-    ++tk.eloc.tpos; // to be consistent
+    //++tk.eloc.col; // for better error messages
+    //++tk.eloc.tpos; // to be consistent
     lookup ~= tk;
   }
 

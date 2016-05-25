@@ -25,6 +25,8 @@ import gmlparser.tokens;
 final class Parser {
   bool strict = false;
   bool warnings = false;
+  bool showCaret = true;
+
   Lexer lex;
   Node curbreak, curcont; // current nodes for `break` and `continue`
 
@@ -214,10 +216,21 @@ final class Parser {
   }
 
   // ////////////////////////////////////////////////////////////////////// //
+  private import std.stdio : File, stdout;
+
+  void printCaret (Loc loc, File ofile) {
+    auto line = lex.line(loc.line);
+    if (line.length == 0) return;
+    ofile.writeln(line);
+    foreach (immutable _; 1..loc.col) ofile.write(' ');
+    ofile.writeln('^');
+  }
+
   void warning(A...) (Loc loc, A args) {
     if (warnings) {
       import std.stdio : stderr;
       stderr.writeln("WARNING at ", loc, ": ", args);
+      if (showCaret) printCaret(loc, stderr);
     }
   }
 
