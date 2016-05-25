@@ -282,18 +282,6 @@ TrueColorImage readImage (VFile fl) {
     if (isz < w*h*4) throw new Exception("image data size too small");
     isz -= w*h*4;
     auto img = new TrueColorImage(w, h);
-    /*
-    foreach (int y; 0..h) {
-      foreach (int x; 0..w) {
-        Color clr;
-        clr.b = fl.readNum!ubyte;
-        clr.g = fl.readNum!ubyte;
-        clr.r = fl.readNum!ubyte;
-        clr.a = fl.readNum!ubyte;
-        img.setPixel(x, y, clr);
-      }
-    }
-    */
     fl.rawReadExact(img.imageData.bytes[0..w*h*4]);
     // now swap bytes
     auto bp = img.imageData.bytes.ptr;
@@ -406,6 +394,7 @@ mixin template GenIO() {
     return res;
   }
 
+  /*
   private static string genDump(T) () {
     string res;
     foreach (immutable fname; __traits(derivedMembers, T)) {
@@ -428,26 +417,23 @@ mixin template GenIO() {
     }
     return res;
   }
+  */
 
   //pragma(msg, genRead!(typeof(this)));
   //pragma(msg, genWrite!(typeof(this)));
   //pragma(msg, genDump!(typeof(this)));
   mixin("void read (VFile fl) {\n"~genRead!(typeof(this))~"}");
   mixin("void write (VFile fl) {\n"~genWrite!(typeof(this))~"}");
-  mixin("void dump () {\nimport std.stdio;\n"~genDump!(typeof(this))~"}");
+  //mixin("void dump () {\nimport std.stdio;\n"~genDump!(typeof(this))~"}");
 }
-
-
-/*
-struct MyStruct {
-  @XField!uint("this is some flag") bool flag;
-  mixin GenIO;
-}
-*/
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-final class GMSprite {
+class GMSomething { this () pure nothrow @safe @nogc {} }
+
+
+// ////////////////////////////////////////////////////////////////////////// //
+final class GMSprite : GMSomething {
 public:
   enum Shape { Precise, Rectangle, Disk, Diamond }
   enum BBox { Automatic, Full, Manual }
@@ -465,21 +451,6 @@ public:
   int bbleft, bbtop, bbright, bbbottom;
 
   this (uint aidx, VFile fl) { idx = aidx; load(fl); }
-
-  void dump () {
-    import std.stdio;
-    writeln("name: [", name, "]");
-    //writeln("lastmod: ", lastmod);
-    writeln("ofs: ", xofs, ", ", yofs);
-    writeln("images: ", images.length);
-    foreach (immutable idx, TrueColorImage img; images) {
-      writeln("  #", idx, "; ", img.width, "x", img.height);
-    }
-    writeln("shape: ", shape);
-    writeln("alpha tolerance: ", alphaTolerance);
-    writeln("separate collision masks: ", separateCollisionMasks);
-    writeln("bbox: ", bbox, " (", bbleft, ",", bbtop, ")-(", bbright, ",", bbbottom, ")");
-  }
 
 private:
   void load (VFile fl) {
@@ -523,7 +494,7 @@ private:
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-final class GMBackground {
+final class GMBackground : GMSomething {
 public:
   uint idx;
   string name;
@@ -535,16 +506,6 @@ public:
   TrueColorImage image;
 
   this (uint aidx, VFile fl) { idx = aidx; load(fl); }
-
-  void dump () {
-    import std.stdio;
-    writeln("name: [", name, "]");
-    //writeln("lastmod: ", lastmod);
-    writeln("tileset: ", tileset, "; ", tileWidth, "x", tileHeight);
-    writeln("ofs: ", xofs, ", ", yofs);
-    writeln("sep: ", xsep, ", ", ysep);
-    writeln("image: ", image.width, "x", image.height);
-  }
 
 private:
   void load (VFile fl) {
@@ -569,7 +530,7 @@ private:
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-final class GMAction {
+final class GMAction : GMSomething {
 public:
   enum Type { Nothing, Function, Code }
 
@@ -626,34 +587,6 @@ public:
 public:
   this (VFile fl) { load(fl); }
 
-  void dump () {
-    import std.stdio;
-    writeln("  libid: ", libid);
-    writeln("  id: ", id);
-    writeln("  kind: ", kind);
-    writeln("  mayberelative: ", mayberelative);
-    writeln("  question: ", question);
-    writeln("  applied: ", applied);
-    writeln("  type: ", type);
-    writeln("  funcname: [", funcname, "]");
-    writeln("  codename: [", codename, "]");
-    writeln("  argused: ", argused);
-    if (argused > 0) writeln("  argtypes: ", argtypes[0..argused]);
-    writeln("  applyobj: ", applyobj);
-    writeln("  relative: ", relative);
-    if (argused > 0) {
-      writeln("  argvals (", argused, "):");
-      foreach (immutable idx, string s; argvals[0..argused]) {
-        import iv.strex;
-        s = s.detab.outdentAll;
-        writeln("   #", idx, ":");
-        foreach (auto ln; s.byLine) if (ln.length) writeln("     ", ln);
-      }
-      //writeln("  argvals: ", argvals[0..argused]);
-    }
-    writeln("  negated: ", negated);
-  }
-
 private:
   void load (VFile fl) {
     auto xver = fl.readNum!uint;
@@ -697,7 +630,7 @@ private:
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-final class GMEvent {
+final class GMEvent : GMSomething {
 public:
   enum Type {
     ev_create,
@@ -721,20 +654,6 @@ public:
 public:
   this (VFile fl, Type atype, uint aid) { type = atype; load(fl, aid); }
 
-  void dump () {
-    import std.stdio;
-    writeln("event id=", id, "; type=", evType(type), "; action count: ", actions.length);
-    foreach (immutable idx, GMAction act; actions) {
-      writeln(" -- action #", idx, " --");
-      act.dump;
-    }
-  }
-
-  static string evType (Type t) {
-    import std.string : format;
-    return (t <= Type.max ? "%s".format(t) : "<%s>".format(cast(uint)t));
-  }
-
 private:
   void load (VFile fl, uint aid) {
     id = aid;
@@ -748,7 +667,7 @@ private:
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-final class GMObject {
+final class GMObject : GMSomething {
 public:
   uint idx;
   string name;
@@ -764,27 +683,6 @@ public:
 
 public:
   this (uint aidx, VFile fl) { idx = aidx; load(fl); }
-
-  void dump () {
-    import std.stdio;
-    writeln("name: [", name, "]");
-    //writeln("lastmod: ", lastmod);
-    writeln("spridx:", spridx);
-    writeln("solid: ", solid);
-    writeln("visible: ", visible);
-    writeln("depth: ", depth);
-    writeln("persistent: ", persistent);
-    writeln("parentobjidx: ", parentobjidx);
-    writeln("maskspridx: ", maskspridx);
-    foreach (immutable evidx, GMEvent[] evs; events) {
-      if (evs.length == 0) continue;
-      writeln(" -- evidx: ", evidx, " --");
-      foreach (immutable idx, GMEvent ev; evs) {
-        writeln(" -- event #", idx, " --");
-        ev.dump;
-      }
-    }
-  }
 
 private:
   void load (VFile fl) {
@@ -815,7 +713,7 @@ private:
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-final class GMRoom {
+final class GMRoom : GMSomething {
 public:
   static struct Back {
   public:
@@ -826,18 +724,6 @@ public:
     int xtile, ytile;
     int xspeed, yspeed;
     bool stretch;
-
-  public:
-    void dump () {
-      import std.stdio;
-      writeln("visibleOnStart: ", visibleOnStart);
-      writeln("fgimage: ", fgimage);
-      writeln("bgimageidx: ", bgimageidx);
-      writeln("pos: (", x, ",", y, ")");
-      writeln("tile: (", xtile, ",", ytile, ")");
-      writeln("speed: (", xspeed, ",", yspeed, ")");
-      writeln("stretch: ", stretch);
-    }
 
   private:
     void load (VFile fl) {
@@ -864,17 +750,6 @@ public:
     int xborder, yborder;
     int xspace, yspace;
     int objfollow; // -1: none
-
-  public:
-    void dump () {
-      import std.stdio;
-      writeln("visibleOnStart: ", visibleOnStart);
-      writeln("view: (", x, ",", y, "); ", width, "x", height);
-      writeln("port: (", portx, ",", porty, "); ", portw, "x", porth);
-      writeln("border: (", xborder, ",", yborder, ")");
-      writeln("space: (", xspace, ",", yspace, ")");
-      writeln("objfollow: ", objfollow);
-    }
 
   private:
     void load (VFile fl, uint xver) {
@@ -905,25 +780,13 @@ public:
     }
   }
 
-  static struct Inst {
+  static final class Inst {
   public:
     int x, y;
     int objidx;
     uint id;
     string createcode;
     bool locked;
-
-  public:
-    this (VFile fl) { load(fl); }
-
-    void dump () {
-      import std.stdio;
-      writeln("position: ", x, "x", y);
-      writeln("objidx: ", objidx);
-      writeln("id: ", id);
-      writeln("createcode: ", createcode.quote);
-      writeln("locked: ", locked);
-    }
 
   private:
     void load (VFile fl) {
@@ -936,7 +799,7 @@ public:
     }
   }
 
-  static struct Tile {
+  static final class Tile {
   public:
     int x, y;
     int bgidx;
@@ -945,19 +808,6 @@ public:
     int layer;
     uint id;
     bool locked;
-
-  public:
-    this (VFile fl) { load(fl); }
-
-    void dump () {
-      import std.stdio;
-      writeln("position: ", x, "x", y);
-      writeln("bgidx: ", bgidx);
-      writeln("tile: (", xtile, ",", ytile, "); ", wtile, "x", htile);
-      writeln("layer: ", layer);
-      writeln("id: ", id);
-      writeln("locked: ", locked);
-    }
 
   private:
     void load (VFile fl) {
@@ -999,42 +849,6 @@ public:
 public:
   this (uint aidx, VFile fl) { idx = aidx; load(fl); }
 
-  void dump () {
-    import std.stdio;
-    writeln("name: [", name, "]");
-    //writeln("lastmod: ", lastmod);
-    writeln("caption: [", caption, "]");
-    writeln("size: ", width, "x", height);
-    writeln("snap: ", xsnap, "x", ysnap);
-    writeln("isogrid: ", isogrid);
-    writeln("speed: ", speed);
-    writeln("persistent: ", persistent);
-    writefln("bgcolor: 0x%08x", bgcolor);
-    writeln("drawbgcolor: ", drawbgcolor);
-    writeln("tile size: ", tilew, "x", tileh);
-    writeln("tile sep: ", xtsep, "x", ytsep);
-    writeln("tile ofs: ", xtofs, "x", ytofs);
-    writeln("createcode: ", createcode.quote);
-    foreach (immutable idx, ref Back b; backs) {
-      if (b.bgimageidx == -1) continue;
-      writeln("-- background #", idx, " --");
-      b.dump;
-    }
-    writeln("viewsEnabled: ", viewsEnabled);
-    foreach (immutable idx, ref View v; views) {
-      writeln("-- view #", idx, " --");
-      v.dump;
-    }
-    foreach (immutable idx, ref Inst i; insts) {
-      writeln("-- instance #", idx, " --");
-      i.dump;
-    }
-    foreach (immutable idx, ref Tile t; tiles) {
-      writeln("-- tile #", idx, " --");
-      t.dump;
-    }
-  }
-
 private:
   void load (VFile fl) {
     name = fl.readPStr;
@@ -1059,10 +873,10 @@ private:
     foreach (ref View v; views) v.load(fl, xver);
     auto count = fl.readNum!uint;
     if (count > 1024*1024) throw new Exception("too many instances in room");
-    foreach (immutable idx; 0..count) insts ~= Inst(fl);
+    foreach (immutable idx; 0..count) { auto i = new Inst(); i.load(fl); insts ~= i; }
     count = fl.readNum!uint;
     if (count > 1024*1024) throw new Exception("too many tiles in room");
-    foreach (immutable idx; 0..count) tiles ~= Tile(fl);
+    foreach (immutable idx; 0..count) { auto t = new Tile; t.load(fl); tiles ~= t; }
     bool rei = (fl.readNum!uint != 0); // room editor info
     // ignore some REI
     fl.readNum!uint; // REI width
@@ -1095,7 +909,7 @@ private:
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-final class GMTrigger {
+final class GMTrigger : GMSomething {
 public:
   enum When { Begin, Middle, End }
 
@@ -1108,14 +922,6 @@ public:
 
 public:
   this (uint aidx, VFile fl) { idx = aidx; load(fl); }
-
-  void dump () {
-    import std.stdio;
-    writeln("name: [", name, "]");
-    writeln("condition: [", condition.quote, "]");
-    writeln("when: ", when);
-    writeln("constname: [", constname, "]");
-  }
 
 private:
   void load (VFile fl) {
@@ -1135,7 +941,7 @@ private:
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-final class GMGameInfo {
+final class GMGameSettings : GMSomething {
   @XField!("uint")("fullscreen") bool fullscreen;
   @XField!("uint")("color interpolation") bool cinterp;
   @XField!("uint")("window border") bool winborder;
@@ -1307,7 +1113,7 @@ private:
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-final class GMGameHelp {
+final class GMGameInfo : GMSomething {
   @XField!("Color")("background color") Color bgcolor;
   @XField!("uint")("show help in separate window") bool newwindow;
   @XField!("pstr")("caption") string caption;
@@ -1327,7 +1133,7 @@ final class GMGameHelp {
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-final class GMScript {
+final class GMScript : GMSomething {
   uint idx;
   string name;
   string code;
@@ -1337,15 +1143,121 @@ final class GMScript {
 
 
 // ////////////////////////////////////////////////////////////////////////// //
+final class GMResTree : GMSomething {
+  static class Node {
+    enum Type {
+      Dir,
+      Object,
+      Sprite,
+      Sound,
+      Room,
+      Background,
+      Script,
+      Path,
+      Font,
+      GameInfo,
+      GameSettings,
+      Timeline,
+      Extensions,
+    }
+    Type type;
+    string name;
+    Node[] children; // for dir
+    GMSomething obj; // for others
+  }
+
+  Node[Node.Type.max+1] roots;
+
+public:
+  this (VFile fl) { load(fl); }
+
+private:
+  void load (VFile fl) {
+    static Node.Type fg2t() (uint n) {
+      switch (n) {
+        case 0: return Node.Type.Sprite;
+        case 1: return Node.Type.Sound;
+        case 2: return Node.Type.Background;
+        case 3: return Node.Type.Path;
+        case 4: return Node.Type.Script;
+        case 5: return Node.Type.Font;
+        case 6: return Node.Type.Timeline;
+        case 7: return Node.Type.Object;
+        case 8: return Node.Type.Room;
+        case 9: return Node.Type.GameInfo;
+        case 10: return Node.Type.GameSettings;
+        case 11: return Node.Type.Extensions;
+        default: assert(0, "invalid tree restype");
+      }
+    }
+
+    static Node.Type g2t() (uint n) {
+      switch (n) {
+        case 1: return Node.Type.Object;
+        case 2: return Node.Type.Sprite;
+        case 3: return Node.Type.Sound;
+        case 4: return Node.Type.Room;
+        case 6: return Node.Type.Background;
+        case 7: return Node.Type.Script;
+        case 8: return Node.Type.Path;
+        case 9: return Node.Type.Font;
+        case 10: return Node.Type.GameInfo;
+        case 11: return Node.Type.GameSettings;
+        case 12: return Node.Type.Timeline;
+        case 13: return Node.Type.Extensions;
+        default: assert(0, "invalid tree restype");
+      }
+    }
+
+    Node loadTree (Node parent, Node.Type ctp) {
+      enum Type { Invalid, Root, SubDir, Leaf }
+      Type type;
+      {
+        auto v = fl.readNum!uint; // 0: root; 1: subdir; 2: leaf
+        if (v == 0 || v > Type.max) { import std.conv : to; throw new Exception("invalid resource type: "~to!string(v)); }
+        type = cast(Type)v;
+      }
+      if (type == Type.Root) if (parent !is null) assert(0, "wtf?!");
+      Node res = new Node();
+      auto grp = fl.readNum!uint;
+      auto gt = g2t(grp);
+      if (gt != ctp) assert(0, "wtf?!");
+      auto ipa = fl.readNum!uint();
+      //if (type == Type.Leaf) writeln("index: ", ipa); else writeln("parent: ", ipa);
+      res.type = (type != Type.Leaf ? Node.Type.Dir : gt);
+      res.name = fl.readPStr;
+      auto childrenCount = fl.readNum!uint;
+      if (type == Type.Leaf && childrenCount > 0) assert(0, "wtf?!");
+      foreach (immutable _; 0..childrenCount) res.children ~= loadTree(res, ctp);
+      return res;
+    }
+
+    foreach (immutable int ridx; 0..12) {
+      auto tree = loadTree(null, fg2t(ridx));
+      roots[cast(uint)fg2t(ridx)] = tree;
+    }
+  }
+}
+
+
+// ////////////////////////////////////////////////////////////////////////// //
 final class Gmk {
-  GMGameInfo gameInfo;
-  GMGameHelp gameHelp;
+  uint gameid;
+  ubyte[16] gameguid;
+  GMGameSettings gameInfo;
+  GMGameInfo gameHelp;
+  string[string] constants;
   private GMTrigger[] triggers;
   private GMSprite[] sprites;
   private GMBackground[] backgrounds;
   private GMRoom[] rooms;
   private GMObject[] objects;
   private GMScript[] scripts;
+  GMResTree tree;
+  uint lastInstanceId;
+  uint lastTileId;
+  uint[] roomseq;
+  string[] extensions;
 
   private GMObject[string] oByNameAA; // objects by name
   private GMRoom[string] rByNameAA; // rooms by name
@@ -1353,8 +1265,8 @@ final class Gmk {
   private GMBackground[string] bByNameAA; // backgrounds by name
   private GMScript[string] scrByNameAA; // scripts by name
 
-  this (VFile fl, bool dump=false) { load(fl, dump); }
-  this (const(char)[] fname, bool dump=false) { load(VFile(fname), dump); }
+  this (VFile fl) { load(fl); }
+  this (const(char)[] fname) { load(VFile(fname)); }
 
   pure nothrow @trusted @nogc {
     GMObject objParent (GMObject o) {
@@ -1391,54 +1303,37 @@ private:
     forEachScript((v) { scrByNameAA[v.name] = v; return false; });
   }
 
-  void load (VFile fl, bool dodump) {
+  void load (VFile fl) {
     auto sign = fl.readNum!uint;
     if (sign != 1234321) throw new Exception("invalid signature");
     auto ver = fl.readNum!uint;
-    if (dodump) writeln("version: ", ver/100, ".", ver%100);
     if (ver < 800) throw new Exception("invalid version");
-    auto gameid = fl.readNum!uint;
-    if (dodump) writeln("game id: ", gameid);
-    ubyte[16] gameguid = void;
+    gameid = fl.readNum!uint;
     fl.rawReadExact(gameguid[]);
-    if (dodump) { write("game id: "); foreach (ubyte b; gameguid[]) writef("%02x", b); writeln; }
     // game settings
     {
-      if (dodump) writeln("=== game settings ===");
       auto xver = fl.readNum!uint;
-      if (dodump) writeln("xver: ", xver);
       assert(xver >= 800);
       auto pksize = fl.readNum!uint;
       auto npos = fl.tell+pksize;
       scope(exit) fl.seek(npos);
-      //writeln("size: ", pksize);
       auto zst = wrapZLibStreamRO(fl, VFSZLibMode.ZLib, -1, fl.tell, pksize);
-      //writeln("unpacked size: ", zst.size);
-      auto gi = new GMGameInfo();
-      gi.read(zst);
-      if (dodump) gi.dump;
-      gameInfo = gi;
+      gameInfo = new GMGameSettings();
+      gameInfo.read(zst);
     }
     // triggers
     {
-      if (dodump) writeln("=== triggers ===");
       auto xver = fl.readNum!uint;
-      if (dodump) writeln("xver: ", xver);
       assert(xver >= 800);
       auto count = fl.readNum!uint;
-      if (dodump) writeln("count: ", count);
       if (count > 0) {
         auto pksize = fl.readNum!uint;
         auto npos = fl.tell+pksize;
         scope(exit) fl.seek(npos);
-        if (dodump) writeln("pksize: ", pksize);
         auto zst = wrapZLibStreamRO(fl, VFSZLibMode.ZLib, -1, fl.tell, pksize);
-        if (dodump) writeln("upsize: ", zst.size);
         foreach (uint idx; 0..count) {
           if (zst.readNum!uint) {
             auto tg = new GMTrigger(idx, zst);
-            if (dodump) writeln("-- trigger #", idx, " --");
-            if (dodump) tg.dump;
             assert(triggers.length == idx);
             triggers ~= tg;
           } else {
@@ -1448,36 +1343,20 @@ private:
         }
       }
       auto lastmod = fl.readDateTime;
-      //if (dodump) writeln("lastmod: ", lastmod);
     }
     // constants
     {
-      if (dodump) writeln("=== constants ===");
       auto xver = fl.readNum!uint;
-      if (dodump) writeln("xver: ", xver);
       assert(xver >= 800);
       auto count = fl.readNum!uint;
-      if (dodump) writeln("count: ", count);
       foreach (immutable idx; 0..count) {
         auto name = fl.readPStr;
         auto value = fl.readPStr;
-        if (dodump) writeln("[", name, "]=[", value, "]");
+        constants[name] = value;
       }
       auto lastmod = fl.readDateTime;
-      //if (dodump) writeln("lastmod: ", lastmod);
     }
     // resources
-    static immutable string[9] ResNames = [
-      "Sounds",
-      "Sprites",
-      "Backrounds",
-      "Paths",
-      "Scripts",
-      "Fonts",
-      "Timelines",
-      "Objects",
-      "Rooms",
-    ];
     enum ResType {
       Sounds,
       Sprites,
@@ -1489,137 +1368,101 @@ private:
       Objects,
       Rooms,
     }
-    foreach (immutable idx, string resname; ResNames) {
-      if (dodump) writeln("=== res:", resname, " ===");
+    foreach (immutable idx; 0..ResType.max+1) {
       auto xver = fl.readNum!uint;
-      if (dodump) writeln("xver: ", ver);
       assert(xver >= 800);
       auto count = fl.readNum!uint;
-      if (dodump) writeln("count: ", count);
       if (count > 0) {
         foreach (uint c; 0..count) {
           auto pksize = fl.readNum!uint;
           auto npos = fl.tell+pksize;
           scope(exit) fl.seek(npos);
-          //writeln("zstream size: ", pksize);
           auto zst = wrapZLibStreamRO(fl, VFSZLibMode.ZLib, -1, fl.tell, pksize);
-          if (idx == ResType.Sprites) {
-            // sprites
-            if (zst.readNum!uint) {
-              auto spr = new GMSprite(c, zst);
-              if (dodump) writeln("-- sprite #", c, " --");
-              if (dodump) spr.dump;
-              assert(sprites.length == c);
-              sprites ~= spr;
-            } else {
-              if (dodump) writeln("-- sprite #", c, " --");
-              if (dodump) writeln("  NONE");
-              assert(sprites.length == c);
-              sprites ~= null;
-            }
-          } else if (idx == ResType.Backrounds) {
-            // backgrounds
-            if (zst.readNum!uint) {
-              auto bg = new GMBackground(c, zst);
-              if (dodump) writeln("-- background #", c, " --");
-              if (dodump) bg.dump;
-              assert(backgrounds.length == c);
-              backgrounds ~= bg;
-            } else {
-              if (dodump) writeln("-- background #", c, " --");
-              if (dodump) writeln("  NONE");
-              assert(backgrounds.length == c);
-              backgrounds ~= null;
-            }
-          } else if (idx == ResType.Scripts) {
-            // scripts
-            if (zst.readNum!uint) {
-              string name = zst.readPStr;
-              auto lastmod = zst.readDateTime;
-              if (dodump) writeln("-- script #", c, " --");
-              if (dodump) writeln("name: [", name, "]");
-              //if (dodump) writeln("lastmod: ", lastmod);
-              auto vv = zst.readNum!uint;
-              if (vv != 400 && (vv < 800 || vv > 810)) throw new Exception("invalid script version");
-              //writeln("===========\n", zst.readPStr, "\n===========");
-              {
-                import iv.strex;
-                import std.string : replace;
-                string s = zst.readPStr.replace("\r\n", "\n").replace("\r", "\n");
-                s = s.outdentAll;
-                auto sc = new GMScript(c, name, s);
-                if (dodump) {
-                  writeln("===========");
-                  foreach (auto ln; s.byLine) if (ln.length) writeln("     ", ln);
-                  writeln("===========");
-                }
-                assert(scripts.length == c);
-                scripts ~= sc;
+          final switch (cast(ResType)idx) {
+            case ResType.Sounds: throw new Exception("sound resources aren't supported");
+            case ResType.Sprites:
+              if (zst.readNum!uint) {
+                auto spr = new GMSprite(c, zst);
+                assert(sprites.length == c);
+                sprites ~= spr;
+              } else {
+                assert(sprites.length == c);
+                sprites ~= null;
               }
-            } else {
-              if (dodump) writeln("-- script #", c, " --");
-              if (dodump) writeln("  NONE");
-              assert(scripts.length == c);
-              scripts ~= null;
-            }
-          } else if (idx == ResType.Objects) {
-            // objects
-            if (zst.readNum!uint) {
-              if (dodump) writeln("-- object #", c, " --");
-              auto obj = new GMObject(c, zst);
-              if (dodump) obj.dump;
-              assert(objects.length == c);
-              objects ~= obj;
-            } else {
-              //writeln("-- object #", c, " --");
-              //writeln("  NONE");
-              assert(objects.length == c);
-              objects ~= null;
-            }
-          } else if (idx == ResType.Rooms) {
-            // rooms
-            if (zst.readNum!uint) {
-              if (dodump) writeln("-- room #", c, " --");
-              auto room = new GMRoom(c, zst);
-              if (dodump) room.dump;
-              assert(rooms.length == c);
-              rooms ~= room;
-            } else {
-              //writeln("-- room #", c, " --");
-              //writeln("  NONE");
-              assert(rooms.length == c);
-              rooms ~= null;
-            }
+              break;
+            case ResType.Backrounds:
+              if (zst.readNum!uint) {
+                auto bg = new GMBackground(c, zst);
+                assert(backgrounds.length == c);
+                backgrounds ~= bg;
+              } else {
+                assert(backgrounds.length == c);
+                backgrounds ~= null;
+              }
+              break;
+            case ResType.Paths: throw new Exception("path resources aren't supported");
+            case ResType.Scripts:
+              if (zst.readNum!uint) {
+                string name = zst.readPStr;
+                auto lastmod = zst.readDateTime;
+                auto vv = zst.readNum!uint;
+                if (vv != 400 && (vv < 800 || vv > 810)) throw new Exception("invalid script version");
+                {
+                  import iv.strex;
+                  import std.string : replace;
+                  string s = zst.readPStr.replace("\r\n", "\n").replace("\r", "\n");
+                  s = s.outdentAll;
+                  auto sc = new GMScript(c, name, s);
+                  assert(scripts.length == c);
+                  scripts ~= sc;
+                }
+              } else {
+                assert(scripts.length == c);
+                scripts ~= null;
+              }
+              break;
+            case ResType.Fonts: throw new Exception("font resources aren't supported");
+            case ResType.Timelines: throw new Exception("timeline resources aren't supported");
+            case ResType.Objects:
+              if (zst.readNum!uint) {
+                auto obj = new GMObject(c, zst);
+                assert(objects.length == c);
+                objects ~= obj;
+              } else {
+                assert(objects.length == c);
+                objects ~= null;
+              }
+              break;
+            case ResType.Rooms:
+              if (zst.readNum!uint) {
+                auto room = new GMRoom(c, zst);
+                assert(rooms.length == c);
+                rooms ~= room;
+              } else {
+                assert(rooms.length == c);
+                rooms ~= null;
+              }
+              break;
           }
         }
       }
     }
     // done with resources
-    auto lastInstanceId = fl.readNum!uint;
-    auto lastTileId = fl.readNum!uint;
-    if (dodump) writeln("last instance placed id: ", lastInstanceId);
-    if (dodump) writeln("last tile placed id: ", lastTileId);
+    lastInstanceId = fl.readNum!uint;
+    lastTileId = fl.readNum!uint;
     // includes
     {
       auto xver = fl.readNum!uint;
       if (/*xver != 620 &&*/ (xver < 800 || xver > 810)) throw new Exception("invalid include files version");
       auto count = fl.readNum!uint;
-      if (dodump) writeln("number of include files: ", count);
-      while (count--) {
-        auto pksize = fl.readNum!uint;
-        fl.seek(pksize, Seek.Cur);
-      }
+      if (count != 0) throw new Exception("include files are not supported");
     }
     // packages
     {
       auto xver = fl.readNum!uint;
       if (xver != 700) throw new Exception("invalid package list version");
       auto count = fl.readNum!uint;
-      if (dodump) writeln("number of packages files: ", count);
-      while (count--) {
-        string name = fl.readPStr;
-        if (dodump) writeln("  package: [", name, "]");
-      }
+      while (count--) extensions ~= fl.readPStr;
     }
     // game information
     {
@@ -1629,19 +1472,15 @@ private:
       auto npos = fl.tell+pksize;
       scope(exit) fl.seek(npos);
       auto zst = wrapZLibStreamRO(fl, VFSZLibMode.ZLib, -1, fl.tell, pksize);
-      gameHelp = new GMGameHelp();
+      gameHelp = new GMGameInfo();
       gameHelp.read(zst);
-      if (dodump) gameHelp.dump;
     }
     // libdeps
     {
       auto xver = fl.readNum!uint;
       if (xver != 500) throw new Exception("invalid library dependency version");
       auto count = fl.readNum!uint;
-      while (count--) {
-        auto lcc = fl.readPStr;
-        if (dodump) if (lcc.length) writeln("libcreatecode: [", lcc.quote, "]");
-      }
+      if (count != 0) throw new Exception("library dependencies are not supported");
     }
     // room execution index
     {
@@ -1650,82 +1489,12 @@ private:
       auto count = fl.readNum!uint;
       if (count > 1024*1024) throw new Exception("room execution sequence too long");
       if (count) {
-        auto sq = new uint[](count);
-        foreach (immutable idx, ref i; sq) i = fl.readNum!uint;
-        if (dodump) writeln("room sequence: ", sq);
+        roomseq = new uint[](count);
+        foreach (immutable idx, ref i; roomseq) i = fl.readNum!uint;
       }
     }
     // resource tree
-    {
-      static immutable string[14] GroupName = [
-        "unknown",
-        "Objects",
-        "Sprites",
-        "Sounds",
-        "Rooms",
-        "Five",
-        "Backgrounds",
-        "Scripts",
-        "Paths",
-        "Fonts",
-        "Game Information",
-        "Global Game Settings",
-        "Time Lines",
-        "Extension Packages",
-      ];
-
-      static immutable string[12] FileGroupName = [
-        "Sprites",
-        "Sounds",
-        "Backgrounds",
-        "Paths",
-        "Scripts",
-        "Fonts",
-        "Time Lines",
-        "Objects",
-        "Rooms",
-        "Game Information",
-        "Global Game Settings",
-        "Extension Packages"
-      ];
-
-      static void writeIndent (int indent) { foreach (immutable n; 0..indent) write(' '); }
-
-      static void dumpTree (VFile fl, int ind, int curgrp=-1) {
-        enum Type { Invalid, Root, SubDir, Leaf }
-        Type type;
-        {
-          auto v = fl.readNum!uint; // 0: root; 1: subdir; 2: leaf
-          if (v == 0 || v > Type.max) { import std.conv : to; throw new Exception("invalid resource type: "~to!string(v)); }
-          type = cast(Type)v;
-        }
-        if (curgrp >= 0) {
-          writeIndent(ind); writeln("---- [", FileGroupName[curgrp], "] ---");
-        } else {
-          writeIndent(ind); writeln("----");
-        }
-        ++ind;
-        writeIndent(ind); writeln("type: ", type);
-        auto grp = fl.readNum!uint;
-        if (grp < GroupName.length) {
-          writeIndent(ind); writeln("grouping: ", grp, " <", GroupName[grp], ">");
-        } else {
-          writeIndent(ind); writeln("grouping: ", grp);
-        }
-        if (type == Type.Leaf) {
-          writeIndent(ind); writeln("index: ", fl.readNum!uint);
-        } else {
-          writeIndent(ind); writeln("parent: ", fl.readNum!uint);
-        }
-        writeIndent(ind); writeln("name: [", fl.readPStr, "]");
-        auto childrenCount = fl.readNum!uint;
-        writeIndent(ind); writeln("childrenCount: ", childrenCount);
-        ++ind;
-        foreach (immutable _; 0..childrenCount) dumpTree(fl, ind);
-      }
-
-      //if (dodump) foreach (immutable ridx; 0..12) dumpTree(fl, 0, cast(int)ridx);
-    }
+    tree = new GMResTree(fl);
     postProcess();
   }
 }

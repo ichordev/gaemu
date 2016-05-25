@@ -64,7 +64,7 @@ NodeFunc parseScript (string code, string scname, bool warnings=true) {
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-NodeFunc[] gmkLoadScripts (Gmk gmk) {
+NodeFunc[] gmkLoadScripts (Gmk gmk, bool doScripts, bool doActions) {
   NodeFunc[] funcs;
 
   import std.conv : to;
@@ -219,7 +219,7 @@ NodeFunc[] gmkLoadScripts (Gmk gmk) {
     if (po is null) assert(0, "wtf?! "~parent);
     gmk.forEachObject((o) {
       if (o.parentobjidx == po.idx) {
-        setupObject(o, po);
+        if (doActions) setupObject(o, po);
         processChildren(o.name);
       }
       return false;
@@ -229,7 +229,7 @@ NodeFunc[] gmkLoadScripts (Gmk gmk) {
   // objects
   gmk.forEachObject((o) {
     if (o.parentobjidx < 0) {
-      setupObject(o, null);
+      if (doActions) setupObject(o, null);
       processChildren(o.name);
     }
     return false;
@@ -238,9 +238,11 @@ NodeFunc[] gmkLoadScripts (Gmk gmk) {
   // scripts
   gmk.forEachScript((sc) {
     assert(sc.name.length);
-    NodeFunc fn = sc.code.parseScript(sc.name);
-    assert(fn.ebody !is null);
-    funcs ~= fn;
+    if (doScripts) {
+      NodeFunc fn = sc.code.parseScript(sc.name);
+      assert(fn.ebody !is null);
+      funcs ~= fn;
+    }
     return false;
   });
 
@@ -254,6 +256,7 @@ void main (string[] args) {
 
   bool dumpFileNames = false;
   bool styleWarnings = false;
+  bool doScripts = true, doActions = true;
 
   bool nomore = false;
   string[] scargs;
@@ -267,10 +270,12 @@ void main (string[] args) {
       if (fname == "--") { nomore = true; continue; }
       if (fname == "-d") { dumpFileNames = true; continue; }
       if (fname == "-w") { styleWarnings = true; continue; }
+      if (fname == "-S") { doScripts = false; continue; }
+      if (fname == "-A") { doActions = false; continue; }
       if (fname[0] == '@') {
         if (fname.length < 2) assert(0, "gmk file?");
         auto gmk = new Gmk(fname[1..$]);
-        funcs ~= gmkLoadScripts(gmk);
+        funcs ~= gmkLoadScripts(gmk, doScripts:doScripts, doActions:doActions);
         continue;
       }
       if (isDir(fname)) {
