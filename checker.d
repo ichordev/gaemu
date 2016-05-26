@@ -259,6 +259,8 @@ void main (string[] args) {
   bool dumpFileNames = false;
   bool styleWarnings = false;
   bool doScripts = true, doActions = true;
+  bool warnVars = false;
+  bool warnWith = false;
 
   bool nomore = false;
   string[] scargs;
@@ -274,6 +276,13 @@ void main (string[] args) {
       if (fname == "-w") { styleWarnings = true; continue; }
       if (fname == "-S") { doScripts = false; continue; }
       if (fname == "-A") { doActions = false; continue; }
+      if (fname == "-wall") {
+        warnVars = true;
+        warnWith = true;
+        continue;
+      }
+      if (fname == "-wvardecl") { warnVars = true; continue; }
+      if (fname == "-wwith") { warnWith = true; continue; }
       if (fname[0] == '@') {
         if (fname.length < 2) assert(0, "gmk file?");
         auto gmk = new Gmk(fname[1..$]);
@@ -301,23 +310,25 @@ void main (string[] args) {
   if (funcs.length > 0) {
     writeln(funcs.length, " function", (funcs.length > 1 ? "s" : ""), " parsed");
     foreach (auto fn; funcs) {
-      bool skip = false;
-      foreach (string name; [
-        "scrCreateTile",
-        "scrCreateTileObj",
-        "scrLoadCheckpoint",
-        "scrLoadLevel",
-        "scrMakeItem",
-        "scrSetCursorTile",
-        "scrSetVendingItem",
-        "scrTestLevel",
-        "scrMagicSigns",
-      ]) {
-        if (fn.name == name) { skip = true; break; }
+      if (warnVars) {analVars(fn);
+        bool skip = false;
+        foreach (string name; [
+          "scrCreateTile",
+          "scrCreateTileObj",
+          "scrLoadCheckpoint",
+          "scrLoadLevel",
+          "scrMakeItem",
+          "scrSetCursorTile",
+          "scrSetVendingItem",
+          "scrTestLevel",
+          "scrMagicSigns",
+        ]) {
+          if (fn.name == name) { skip = true; break; }
+        }
+        if (!skip && fn.name.length > 3 && fn.name[0..3] == "sui") skip = true;
+        if (!skip) analVars(fn);
       }
-      if (skip) continue;
-      if (fn.name.length > 3 && fn.name[0..3] == "sui") continue;
-      analVars(null, fn);
+      if (warnWith) analWith(fn);
     }
   }
 }

@@ -26,7 +26,7 @@ import gmlparser.astools;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-void analVars (Parser pp, Node nn) {
+void analVars (Node nn, Parser pp=null) {
   import std.stdio;
 
   static struct VarInfo {
@@ -397,4 +397,86 @@ void analVars (Parser pp, Node nn) {
     }
   }
   anal(nn);
+}
+
+
+// ////////////////////////////////////////////////////////////////////////// //
+void analWith (Node nn, Parser pp=null) {
+  import std.stdio : writeln;
+
+  alias anal = analWith;
+
+  if (nn is null) return;
+  if (cast(NodeStatement)nn) {
+    selectNode!(void)(nn,
+      (NodeVarDecl n) {},
+      (NodeBlock n) { foreach (Node st; n.stats) anal(st, pp); },
+      (NodeStatementEmpty n) {},
+      (NodeStatementExpr n) { anal(n.e, pp); },
+      (NodeReturn n) { anal(n.e, pp); },
+      (NodeWith n) {
+        anal(n.e, pp);
+        if (auto blk = cast(NodeBlock)n.ebody) {
+          if (blk.stats.length == 0) {
+            writeln(n.loc, ": ???");
+            if (pp !is null) pp.printCaret(n.loc);
+          } else if (blk.stats.length == 1) {
+            if (cast(NodeStatementExpr)blk.stats[0] || cast(NodeReturn)blk.stats[0]) {
+              writeln(n.loc, ": possible excessive '{}' in 'with'");
+              if (pp !is null) pp.printCaret(n.loc);
+              return;
+            }
+            if (cast(NodeStatementEmpty)blk.stats[0]) {
+              writeln(n.loc, ": empty statement in empty block in 'with'");
+              if (pp !is null) pp.printCaret(n.loc);
+              return;
+            }
+            if (cast(NodeStatementBreak)blk.stats[0]) {
+              writeln(n.loc, ": single 'break' in 'with', noop");
+              if (pp !is null) pp.printCaret(n.loc);
+              return;
+            }
+            if (cast(NodeStatementContinue)blk.stats[0]) {
+              writeln(n.loc, ": single 'continue' in 'with', noop");
+              if (pp !is null) pp.printCaret(n.loc);
+              return;
+            }
+          }
+        }
+        anal(n.ebody, pp);
+      },
+      (NodeIf n) { anal(n.ec, pp); anal(n.et, pp); anal(n.ef, pp); },
+      (NodeStatementBreak n) {},
+      (NodeStatementContinue n) {},
+      (NodeFor n) { anal(n.einit, pp); anal(n.econd, pp); anal(n.enext, pp); anal(n.ebody, pp); },
+      (NodeWhile n) { anal(n.econd, pp); anal(n.ebody, pp); },
+      (NodeDoUntil n) { anal(n.econd, pp); anal(n.ebody, pp); },
+      (NodeRepeat n) { anal(n.ecount, pp); anal(n.ebody, pp); },
+      (NodeSwitch n) {
+        anal(n.e, pp);
+        foreach (ref ci; n.cases) { anal(ci.e, pp); anal(ci.st, pp); }
+      },
+      () { assert(0, "unimplemented node: "~typeid(nn).name); },
+    );
+  } else {
+    selectNode!(void)(nn,
+      (NodeLiteral n) {},
+      (NodeUnary n) { anal(n.e, pp); },
+      (NodeBinaryAss n) { anal(n.el, pp); anal(n.er, pp); },
+      (NodeBinary n) { anal(n.el, pp); anal(n.er, pp); },
+      (NodeFCall n) {
+        anal(n.fe, pp);
+        foreach (immutable idx, Node a; n.args) anal(a, pp);
+      },
+      (NodeId n) {},
+      (NodeDot n) { anal(n.e, pp); },
+      (NodeIndex n) {
+        anal(n.ei0, pp);
+        anal(n.ei1, pp);
+        anal(n.e, pp);
+      },
+      (NodeFunc n) { anal(n.ebody, pp); },
+      () { assert(0, "unimplemented node: "~typeid(nn).name); },
+    );
+  }
 }
