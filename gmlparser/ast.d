@@ -27,7 +27,7 @@ auto selectNode(RetType=void, A...) (Node node, scope A args) => selector!RetTyp
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-class Node {
+abstract class Node {
   protected import std.string : stripLeft, stripRight;
 
   Loc loc;
@@ -54,12 +54,12 @@ class Node {
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-class NodeLiteral : Node {
+abstract class NodeLiteral : Node {
   this () {}
   this (Loc aloc) { super(aloc); }
 }
 
-class NodeLiteralString : NodeLiteral {
+class NodeLiteralStr : NodeLiteral {
   string val;
 
   this () {}
@@ -87,7 +87,7 @@ class NodeLiteralNum : NodeLiteral {
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-class NodeExpr : Node {
+abstract class NodeExpr : Node {
   string name; // various purposes
 
   this () {}
@@ -98,7 +98,7 @@ class NodeExpr : Node {
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-class NodeUnary : NodeExpr {
+abstract class NodeUnary : NodeExpr {
   Node e;
 
   this () {}
@@ -134,7 +134,7 @@ mixin(UnaryOpMixin!("BitNeg", "~"));
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-class NodeBinary : NodeExpr {
+abstract class NodeBinary : NodeExpr {
   Node el, er;
 
   this () {}
@@ -151,7 +151,7 @@ class NodeBinary : NodeExpr {
   }
 }
 
-class NodeBinaryCmp : NodeBinary {
+abstract class NodeBinaryCmp : NodeBinary {
   this () {}
   this (Node ael, Node aer, string aname) { super(ael, aer, aname); }
   this (Loc aloc, Node ael, Node aer, string aname) { super(aloc, ael, aer, aname); }
@@ -159,7 +159,7 @@ class NodeBinaryCmp : NodeBinary {
   override string toStringInd (int indent) const => indentStr(indent)~el.toString~" "~name~" "~er.toString;
 }
 
-class NodeBinaryLogic : NodeBinary {
+abstract class NodeBinaryLogic : NodeBinary {
   this () {}
   this (Node ael, Node aer, string aname) { super(ael, aer, aname); }
   this (Loc aloc, Node ael, Node aer, string aname) { super(aloc, ael, aer, aname); }
@@ -289,7 +289,7 @@ class NodeFCall : NodeExpr {
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-class NodeStatement : Node {
+abstract class NodeStatement : Node {
   this () {}
   this (Node ae) { super(ae); }
   this (Loc aloc) { super(aloc); }
@@ -421,7 +421,7 @@ class NodeIf : NodeStatement {
 
 // ////////////////////////////////////////////////////////////////////////// //
 // `break` and `continue` operators
-class NodeStatementBreakCont : NodeStatement {
+abstract class NodeStatementBreakCont : NodeStatement {
   Node ewhich; // loop/switch node
 
   this () {}
@@ -558,8 +558,12 @@ class NodeSwitch : NodeStatement {
 // ////////////////////////////////////////////////////////////////////////// //
 // function with body
 class NodeFunc : Node {
+  import gmlparser.parser : Parser;
+
   string name;
   NodeBlock ebody;
+
+  Parser pp;
 
   this () {}
   this (Loc aloc, string aname) { name = aname; super(aloc); }

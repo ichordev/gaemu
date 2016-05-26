@@ -28,6 +28,8 @@ public struct Loc {
 
   string toString () const { import std.string : format; return "%s (%s,%s)".format(file, line, col); }
   string toStringNoFile () const { import std.string : format; return "(%s,%s)".format(line, col); }
+
+  @property bool valid () const pure nothrow @safe @nogc { pragma(inline, true); return (line > 0 && col > 0); }
 }
 
 

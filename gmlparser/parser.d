@@ -113,7 +113,7 @@ final class Parser {
     // literals and id
     switch (lex.front.type) {
       case Token.Type.Num: auto n = lex.front.num; lex.popFront(); return new NodeLiteralNum(loc, n);
-      case Token.Type.Str: auto n = lex.front.istr; lex.popFront(); return new NodeLiteralString(loc, n);
+      case Token.Type.Str: auto n = lex.front.istr; lex.popFront(); return new NodeLiteralStr(loc, n);
       case Token.Type.Id: return new NodeId(loc, lex.expectId);
       default: break;
     }

@@ -24,6 +24,95 @@ import gmlparser.ast;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
+enum VisitRes { Continue, Stop, NoChildren }
+
+private final class NodeNoChildren : Node {}
+private __gshared NodeNoChildren nnc;
+shared static this () { nnc = new NodeNoChildren(); }
+
+
+Node visitNodes (Node nn, VisitRes delegate (Node n) dg) {
+  if (nn is null) return null;
+  if (auto r = dg(nn)) return (r == VisitRes.Stop ? nn : null);
+  Node res;
+  if (cast(NodeStatement)nn) {
+    res = selectNode!(Node)(nn,
+      (NodeVarDecl n) => null,
+      (NodeBlock n) {
+        foreach (Node st; n.stats) if (auto r = visitNodes(st, dg)) return r;
+        return null;
+      },
+      (NodeStatementEmpty n) => null,
+      (NodeStatementExpr n) => visitNodes(n.e, dg),
+      (NodeReturn n) => visitNodes(n.e, dg),
+      (NodeWith n) {
+        if (auto r = visitNodes(n.e, dg)) return r;
+        return visitNodes(n.ebody, dg);
+      },
+      (NodeIf n) {
+        if (auto r = visitNodes(n.ec, dg)) return r;
+        if (auto r = visitNodes(n.et, dg)) return r;
+        return visitNodes(n.ef, dg);
+      },
+      (NodeStatementBreak n) => null,
+      (NodeStatementContinue n) => null,
+      (NodeFor n) {
+        if (auto r = visitNodes(n.einit, dg)) return r;
+        if (auto r = visitNodes(n.econd, dg)) return r;
+        if (auto r = visitNodes(n.enext, dg)) return r;
+        return visitNodes(n.ebody, dg);
+      },
+      (NodeWhile n) {
+        if (auto r = visitNodes(n.econd, dg)) return r;
+        return visitNodes(n.ebody, dg);
+      },
+      (NodeDoUntil n) {
+        if (auto r = visitNodes(n.econd, dg)) return r;
+        return visitNodes(n.ebody, dg);
+      },
+      (NodeRepeat n) {
+        if (auto r = visitNodes(n.ecount, dg)) return r;
+        return visitNodes(n.ebody, dg);
+      },
+      (NodeSwitch n) {
+        if (auto r = visitNodes(n.e, dg)) return r;
+        foreach (ref ci; n.cases) {
+          if (auto r = visitNodes(ci.e, dg)) return r;
+          if (auto r = visitNodes(ci.st, dg)) return r;
+        }
+        return null;
+      },
+      () { assert(0, "unimplemented node: "~typeid(nn).name); },
+    );
+  } else {
+    res = selectNode!(Node)(nn,
+      (NodeLiteral n) => null,
+      (NodeUnary n) => visitNodes(n.e, dg),
+      (NodeBinary n) {
+        if (auto r = visitNodes(n.el, dg)) return r;
+        return visitNodes(n.er, dg);
+      },
+      (NodeFCall n) {
+        if (auto r = visitNodes(n.fe, dg)) return r;
+        foreach (immutable idx, Node a; n.args) if (auto r = visitNodes(a, dg)) return r;
+        return null;
+      },
+      (NodeId n) => null,
+      (NodeDot n) => visitNodes(n.e, dg),
+      (NodeIndex n) {
+        if (auto r = visitNodes(n.ei0, dg)) return r;
+        if (auto r = visitNodes(n.ei1, dg)) return r;
+        return visitNodes(n.e, dg);
+      },
+      (NodeFunc n) => visitNodes(n.ebody, dg),
+      () { assert(0, "unimplemented node: "~typeid(nn).name); },
+    );
+  }
+  if (res is nnc) res = null;
+  return res;
+}
+
+// ////////////////////////////////////////////////////////////////////////// //
 bool isEmpty (Node nn) {
   if (nn is null) return true;
   if (auto n = cast(NodeFunc)nn) return isEmpty(n.ebody);

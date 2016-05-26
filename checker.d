@@ -3,9 +3,9 @@ module checker is aliced;
 import std.stdio;
 
 import gmlparser;
-import ungmk;
-
 import gmlparser.anal;
+
+import ungmk;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
@@ -261,6 +261,7 @@ void main (string[] args) {
   bool doScripts = true, doActions = true;
   bool warnVars = false;
   bool warnWith = false;
+  bool warnAss = false;
 
   bool nomore = false;
   string[] scargs;
@@ -279,10 +280,12 @@ void main (string[] args) {
       if (fname == "-wall") {
         warnVars = true;
         warnWith = true;
+        warnAss = true;
         continue;
       }
       if (fname == "-wvardecl") { warnVars = true; continue; }
       if (fname == "-wwith") { warnWith = true; continue; }
+      if (fname == "-wass") { warnAss = true; continue; }
       if (fname[0] == '@') {
         if (fname.length < 2) assert(0, "gmk file?");
         auto gmk = new Gmk(fname[1..$]);
@@ -329,6 +332,7 @@ void main (string[] args) {
         if (!skip) analVars(fn);
       }
       if (warnWith) analWith(fn);
+      if (warnAss) analAss(fn);
     }
   }
 }
