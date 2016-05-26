@@ -27,26 +27,9 @@ auto selectNode(RetType=void, A...) (Node node, scope A args) => selector!RetTyp
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-/*
-private string killEB (string r) {
-  if (r.length < 2 || r[0] != '(' || r[$-1] != ')') return r;
-  int depth = 1;
-  usize pos = 1;
-  while (pos < r.length-1) {
-    if (r.ptr[pos] == '(') {
-      ++depth;
-    } else if (r.ptr[pos] == ')') {
-      if (--depth == 0) return r;
-    }
-    ++pos;
-  }
-  return r[1..$-1];
-}
-*/
-
-
-// ////////////////////////////////////////////////////////////////////////// //
 class Node {
+  protected import std.string : stripLeft, stripRight;
+
   Loc loc;
   bool textual; // used for unary and binary nodes where, for example, "and" is used instead of "&&"
 
@@ -54,7 +37,19 @@ class Node {
   this (Node n) { if (n !is null) loc = n.loc; }
   this (Loc aloc) { loc = aloc; }
 
-  override string toString () const => "<invalid node:"~typeof(this).stringof~">";
+  string toStringInd (int indent) const => indentStr(indent)~"<invalid node:"~typeof(this).stringof~">";
+
+  override string toString () const => toStringInd(0);
+
+  // add outer "()" if there is none
+  string asCondStr () const => (cast(NodeUnaryParens)this ? this.toString : "("~this.toString~")");
+
+  static string indentStr (int indent) {
+    if (indent < 1) return null;
+    auto s = new char[](indent);
+    s[] = ' ';
+    return cast(string)s; // it is safe here
+  }
 }
 
 
@@ -70,10 +65,11 @@ class NodeLiteralString : NodeLiteral {
   this () {}
   this (Loc aloc, string aval) { val = aval; super(aloc); }
 
-  override string toString () const {
+  override string toStringInd (int indent) const {
     import std.array : appender;
     import std.format : formatElement, FormatSpec;
     auto res = appender!string();
+    res.put(indentStr(indent));
     FormatSpec!char fspc; // defaults to 's'
     formatElement(res, val, fspc);
     return res.data;
@@ -86,7 +82,7 @@ class NodeLiteralNum : NodeLiteral {
   this () {}
   this (Loc aloc, float aval) { val = aval; super(aloc); }
 
-  override string toString () const { import std.string : format; return "%s".format(val); }
+  override string toStringInd (int indent) const { import std.string : format; return "%s%s".format(indentStr(indent), val); }
 }
 
 
@@ -109,7 +105,7 @@ class NodeUnary : NodeExpr {
   this (Node ae, string aname) { e = ae; super(ae, aname); }
   this (Loc aloc, Node ae, string aname) { e = ae; super(aloc, aname); }
 
-  override string toString () const => name~e.toString;
+  override string toStringInd (int indent) const => indentStr(indent)~name~e.toString;
 }
 
 
@@ -118,9 +114,9 @@ class NodeUnary : NodeExpr {
 class NodeUnaryParens : NodeUnary {
   this () {}
   this (Node ae) { super(ae, "()"); }
-  this (Loc aloc, Node ae) { super(aloc, e, "()"); }
+  this (Loc aloc, Node ae) { super(aloc, ae, "()"); }
 
-  override string toString () const => "("~e.toString~")";
+  override string toStringInd (int indent) const => indentStr(indent)~"("~e.toString~")";
 }
 
 
@@ -145,13 +141,13 @@ class NodeBinary : NodeExpr {
   this (Node ael, Node aer, string aname) { el = ael; er = aer; super((ael !is null ? ael : aer), aname); }
   this (Loc aloc, Node ael, Node aer, string aname) { el = ael; er = aer; super(aloc, aname); }
 
-  override string toString () const {
-    if (name.length > 1 && name != "<<" && name != ">>") return el.toString~" "~name~" "~er.toString;
+  override string toStringInd (int indent) const {
+    if (name.length > 1 && name != "<<" && name != ">>") return indentStr(indent)~el.toString~" "~name~" "~er.toString;
     // to correctly emit "a- -1"
     if (name == "-") {
-      if (auto l = cast(NodeLiteralNum)er) return el.toString~(l.val < 0 ? " " : "")~name~(l.val < 0 ? " " : "")~er.toString;
+      if (auto l = cast(NodeLiteralNum)er) return indentStr(indent)~el.toString~(l.val < 0 ? " " : "")~name~(l.val < 0 ? " " : "")~er.toString;
     }
-    return el.toString~name~er.toString;
+    return indentStr(indent)~el.toString~name~er.toString;
   }
 }
 
@@ -160,7 +156,7 @@ class NodeBinaryCmp : NodeBinary {
   this (Node ael, Node aer, string aname) { super(ael, aer, aname); }
   this (Loc aloc, Node ael, Node aer, string aname) { super(aloc, ael, aer, aname); }
 
-  override string toString () const => el.toString~" "~name~" "~er.toString;
+  override string toStringInd (int indent) const => indentStr(indent)~el.toString~" "~name~" "~er.toString;
 }
 
 class NodeBinaryLogic : NodeBinary {
@@ -168,7 +164,7 @@ class NodeBinaryLogic : NodeBinary {
   this (Node ael, Node aer, string aname) { super(ael, aer, aname); }
   this (Loc aloc, Node ael, Node aer, string aname) { super(aloc, ael, aer, aname); }
 
-  override string toString () const => el.toString~" "~name~" "~er.toString;
+  override string toStringInd (int indent) const => indentStr(indent)~el.toString~" "~name~" "~er.toString;
 }
 
 private enum BinaryOpMixin(string name, string opstr, string base="") =
@@ -201,7 +197,28 @@ mixin(BinaryOpMixin!("LogOr", "||", "Logic"));
 mixin(BinaryOpMixin!("LogAnd", "&&", "Logic"));
 mixin(BinaryOpMixin!("LogXor", "^^", "Logic"));
 
-mixin(BinaryOpMixin!("Ass", "=")); // assign ;-)
+class NodeBinaryAss : NodeBinary {
+  bool expanded; // this is expanded opOpAssign
+
+  this () {}
+  this (Node ael, Node aer) { super(ael, aer, "="); }
+  this (Loc aloc, Node ael, Node aer) { super(aloc, ael, aer, "="); }
+  this (Loc aloc, Node ael, Node aer, bool aexpanded) { expanded = aexpanded; super(aloc, ael, aer, "="); }
+
+  override string toStringInd (int indent) const {
+    string res = indentStr(indent)~el.toString~" ";
+    if (expanded) {
+      if (auto x = cast(NodeBinary)er) {
+        res ~= x.name~"= "~x.er.toString;
+      } else {
+        assert(0, "wtf?!");
+      }
+    } else {
+      res ~= "= "~er.toString;
+    }
+    return res;
+  }
+}
 
 // these nodes will never end up in AST, they are here for parser needs
 mixin(BinaryOpMixin!("And", "and", "Logic"));
@@ -216,7 +233,7 @@ class NodeId : NodeExpr {
   this (string aname) { super(aname); }
   this (Loc aloc, string aname) { super(aloc, aname); }
 
-  override string toString () const => name;
+  override string toStringInd (int indent) const => indentStr(indent)~name;
 }
 
 
@@ -229,7 +246,7 @@ class NodeDot : NodeExpr {
   this (Node ae, string name) { e = ae; super(ae, name); }
   this (Loc aloc, Node ae, string name) { e = ae; super(aloc, name); }
 
-  override string toString () const => e.toString~"."~name;
+  override string toStringInd (int indent) const => indentStr(indent)~e.toString~"."~name;
 }
 
 
@@ -243,8 +260,8 @@ class NodeIndex : NodeExpr {
   this (Node ae) { e = ae; super(ae, "index"); }
   this (Loc aloc, Node ae) { e = ae; super(aloc, "index"); }
 
-  override string toString () const {
-    string res = e.toString~"["~ei0.toString;
+  override string toStringInd (int indent) const {
+    string res = indentStr(indent)~e.toString~"["~ei0.toString;
     if (ei1 !is null) res ~= ", "~ei1.toString;
     return res~"]";
   }
@@ -260,8 +277,8 @@ class NodeFCall : NodeExpr {
   this () {}
   this (Loc aloc, Node afe) { fe = afe; super(aloc, "fcall"); }
 
-  override string toString () const {
-    string res = fe.toString~"(";
+  override string toStringInd (int indent) const {
+    string res = indentStr(indent)~fe.toString~"(";
     foreach (immutable idx, const Node a; args) {
       if (idx != 0) res ~= ", ";
       res ~= a.toString;
@@ -294,8 +311,8 @@ class NodeVarDecl : NodeStatement {
     return false;
   }
 
-  override string toString () const {
-    string res = (asGlobal ? "globalvar " : "var ");
+  override string toStringInd (int indent) const {
+    string res = indentStr(indent)~(asGlobal ? "globalvar " : "var ");
     foreach (immutable idx, string n; names) {
       if (idx != 0) res ~= ", ";
       res ~= n;
@@ -318,10 +335,10 @@ class NodeBlock : NodeStatement {
     stats ~= n;
   }
 
-  override string toString () const {
+  override string toStringInd (int indent) const {
     string res = "{";
-    foreach (const n; stats) res ~= "\n"~n.toString;
-    res ~= "\n}";
+    foreach (const n; stats) res ~= "\n"~n.toStringInd(indent+2);
+    res ~= "\n"~indentStr(indent)~"}";
     return res;
   }
 }
@@ -332,7 +349,7 @@ class NodeStatementEmpty : NodeStatement {
   this () {}
   this (Loc aloc) { loc = aloc; }
 
-  override string toString () const => "{}";
+  override string toStringInd (int indent) const => indentStr(indent)~"{}";
 }
 
 
@@ -345,7 +362,7 @@ class NodeStatementExpr : NodeStatement {
   this (Node ae) { e = ae; super(ae); }
   this (Loc aloc, Node ae) { e = ae; super(aloc); }
 
-  override string toString () const => e.toString~";";
+  override string toStringInd (int indent) const => e.toStringInd(indent)~";";
 }
 
 
@@ -358,7 +375,7 @@ class NodeReturn : NodeStatement {
   this (Node ae) { e = ae; super(ae); }
   this (Loc aloc, Node ae=null) { e = ae; super(aloc); }
 
-  override string toString () const => (e !is null ? "return "~e.toString~";" : "exit;");
+  override string toStringInd (int indent) const => indentStr(indent)~(e !is null ? "return "~e.toString~";" : "exit;");
 }
 
 
@@ -372,20 +389,33 @@ class NodeWith : NodeStatement {
   this (Node ae) { e = ae; super(ae); }
   this (Loc aloc, Node ae) { e = ae; super(aloc); }
 
-  override string toString () const => "with ("~e.toString~") "~ebody.toString;
+  override string toStringInd (int indent) const => indentStr(indent)~"with "~e.asCondStr~" "~ebody.toStringInd(indent).stripLeft;
 }
 
 
 // ////////////////////////////////////////////////////////////////////////// //
 // `if` operator
 class NodeIf : NodeStatement {
-  Node ec, et, ef;
+  Node ec;
+  NodeStatement et, ef;
 
   this () {}
-  this (Node aec, Node aet, Node aef) { ec = aec; et = aet; ef = aef; super((aec !is null ? aec : aet ! is null ? aet : aef)); }
-  this (Loc aloc, Node aec, Node aet, Node aef) { ec = aec; et = aet; ef = aef; super(aloc); }
+  this (Node aec, NodeStatement aet, NodeStatement aef) { ec = aec; et = aet; ef = aef; super((aec !is null ? aec : aet ! is null ? aet : aef)); }
+  this (Loc aloc, Node aec, NodeStatement aet, NodeStatement aef) { ec = aec; et = aet; ef = aef; super(aloc); }
 
-  override string toString () const => "if ("~ec.toString~") "~et.toString~(ef !is null && !cast(NodeStatementEmpty)ef ? " else "~ef.toString : "");
+  override string toStringInd (int indent) const {
+    //{ import std.stdio : stderr; stderr.writeln(loc); }
+    assert(et !is null);
+    string res = indentStr(indent)~"if "~ec.asCondStr~" "~et.toStringInd(indent).stripLeft;
+    if (ef is null) return res;
+    if (cast(NodeBlock)et || cast(NodeBlock)ef) return res~" else "~ef.toStringInd(indent).stripLeft;
+    if (cast(NodeIf)et) return res~" else "~ef.toStringInd(indent).stripLeft;
+    if (cast(NodeIf)ef) return res~"\n"~indentStr(indent)~"else "~ef.toStringInd(indent).stripLeft;
+    string st = et.toString;
+    string sf = ef.toString;
+    if (st.length+sf.length <= 68) return res~" else "~sf;
+    return res~"\n"~indentStr(indent)~"else "~ef.toStringInd(indent).stripLeft;
+  }
 }
 
 
@@ -402,14 +432,14 @@ class NodeStatementBreakCont : NodeStatement {
 class NodeStatementBreak : NodeStatementBreakCont {
   this (Loc aloc, Node awhich) { super(aloc, awhich); }
 
-  override string toString () const => "break;";
+  override string toStringInd (int indent) const => indentStr(indent)~"break;";
 }
 
 // `continue` operator
 class NodeStatementContinue : NodeStatementBreakCont {
   this (Loc aloc, Node awhich) { super(aloc, awhich); }
 
-  override string toString () const => "continue;";
+  override string toStringInd (int indent) const => indentStr(indent)~"continue;";
 }
 
 
@@ -422,7 +452,7 @@ class NodeFor : NodeStatement {
   this () {}
   this (Loc aloc) { super(aloc); }
 
-  override string toString () const => "for ("~einit.toString~"; "~econd.toString~"; "~enext.toString~") "~ebody.toString;
+  override string toStringInd (int indent) const => indentStr(indent)~"for ("~einit.toString~"; "~econd.toString~"; "~enext.toString~") "~ebody.toStringInd(indent).stripLeft;
 }
 
 
@@ -435,7 +465,7 @@ class NodeWhile : NodeStatement {
   this () {}
   this (Loc aloc) { super(aloc); }
 
-  override string toString () const => "while ("~econd.toString~") "~ebody.toString;
+  override string toStringInd (int indent) const => indentStr(indent)~"while "~econd.asCondStr~" "~ebody.toStringInd(indent).stripLeft;
 }
 
 
@@ -448,7 +478,7 @@ class NodeDoUntil : NodeStatement {
   this () {}
   this (Loc aloc) { super(aloc); }
 
-  override string toString () const => "do "~ebody.toString~" until ("~econd.toString~");";
+  override string toStringInd (int indent) const => indentStr(indent)~"do "~ebody.toStringInd(indent).stripLeft~" until "~econd.asCondStr~";";
 }
 
 
@@ -461,7 +491,7 @@ class NodeRepeat : NodeStatement {
   this () {}
   this (Loc aloc) { super(aloc); }
 
-  override string toString () const => "repeat ("~ecount.toString~") "~ebody.toString;
+  override string toStringInd (int indent) const => indentStr(indent)~"repeat "~ecount.asCondStr~" "~ebody.toStringInd(indent).stripLeft;
 }
 
 
@@ -470,7 +500,7 @@ class NodeRepeat : NodeStatement {
 class NodeSwitch : NodeStatement {
   static struct Case {
     Node e; // condition; `null` means "default"
-    Node st; // can be `null`
+    NodeBlock st; // can be `null`
   }
   Node e; // switch expression
   Case[] cases; // never mutate directly!
@@ -478,7 +508,7 @@ class NodeSwitch : NodeStatement {
   this () {}
   this (Loc aloc) { super(aloc); }
 
-  void appendCase (Node ae, Node ast) {
+  void appendCase (Node ae, NodeBlock ast) {
     if (ae is null) {
       foreach (ref cc; cases) {
         if (cc.e is null) throw new ErrorAt(loc, "duplicate `default`");
@@ -487,17 +517,40 @@ class NodeSwitch : NodeStatement {
     cases ~= Case(ae, ast);
   }
 
-  override string toString () const {
-    string res = "switch ("~e.toString~") {";
-    foreach (ref c; cases) {
+  override string toStringInd (int indent) const {
+    string res = indentStr(indent)~"switch "~e.asCondStr~" {";
+    indent += 2;
+    foreach (immutable idx, ref c; cases) {
       if (c.e !is null) {
-        res ~= "\ncase "~c.e.toString~":";
+        res ~= "\n"~indentStr(indent)~"case "~c.e.toString~":";
       } else {
-        res ~= "\ndefault:";
+        res ~= "\n"~indentStr(indent)~"default:";
       }
-      res ~= (c.st !is null ? " "~c.st.toString : "");
+      if (c.st !is null && c.st.stats.length > 0) {
+        /*
+        if (auto blk = cast(NodeBlock)c.st) {
+          import std.string : stripRight;
+          res ~= " "~c.st.toStringInd(indent).stripLeft.stripRight[1..$-1].stripLeft.stripRight;
+        } else {
+          res ~= " "~c.st.toStringInd(indent).stripLeft;
+        }
+        */
+        if (c.st.stats.length == 1) {
+          res ~= " "~c.st.toStringInd(indent).stripLeft.stripRight[1..$-1].stripLeft.stripRight;
+        } else if (c.st.stats.length == 2 && (idx == 0 || cases[idx-1].st !is null)) {
+          string stx = c.st.stats[0].toString~" "~c.st.stats[1].toString;
+          if (stx.length <= 69) {
+            res ~= " "~stx;
+          } else {
+            res ~= "\n"~indentStr(indent+2)~c.st.toStringInd(indent).stripLeft.stripRight[1..$-1].stripLeft.stripRight;
+          }
+        } else {
+          res ~= "\n"~indentStr(indent+2)~c.st.toStringInd(indent).stripLeft.stripRight[1..$-1].stripLeft.stripRight;
+        }
+      }
     }
-    return res~"\n}";
+    indent -= 2;
+    return res~"\n"~indentStr(indent)~"}";
   }
 }
 
@@ -511,5 +564,5 @@ class NodeFunc : Node {
   this () {}
   this (Loc aloc, string aname) { name = aname; super(aloc); }
 
-  override string toString () const => "function "~name~" "~ebody.toString;
+  override string toStringInd (int indent) const => indentStr(indent)~"function "~name~" "~ebody.toStringInd(indent).stripLeft;
 }

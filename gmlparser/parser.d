@@ -203,15 +203,15 @@ final class Parser {
     auto e = parseExprLogOr(true); // stop on assign
     auto loc = lex.loc;
     if (lex.eatKw(Keyword.Ass)) return new NodeBinaryAss(loc, e, parseExpr());
-    if (lex.eatKw(Keyword.AssAdd)) return new NodeBinaryAss(loc, e, new NodeBinaryAdd(lex.loc, e, parseExpr()));
-    if (lex.eatKw(Keyword.AssSub)) return new NodeBinaryAss(loc, e, new NodeBinarySub(lex.loc, e, parseExpr()));
-    if (lex.eatKw(Keyword.AssMul)) return new NodeBinaryAss(loc, e, new NodeBinaryMul(lex.loc, e, parseExpr()));
-    if (lex.eatKw(Keyword.AssDiv)) return new NodeBinaryAss(loc, e, new NodeBinaryRDiv(lex.loc, e, parseExpr()));
-    if (lex.eatKw(Keyword.AssBitAnd)) return new NodeBinaryAss(loc, e, new NodeBinaryBitAnd(lex.loc, e, parseExpr()));
-    if (lex.eatKw(Keyword.AssBitOr)) return new NodeBinaryAss(loc, e, new NodeBinaryBitOr(lex.loc, e, parseExpr()));
-    if (lex.eatKw(Keyword.AssBitXor)) return new NodeBinaryAss(loc, e, new NodeBinaryBitXor(lex.loc, e, parseExpr()));
-    if (lex.eatKw(Keyword.AssLShift)) return new NodeBinaryAss(loc, e, new NodeBinaryLShift(lex.loc, e, parseExpr()));
-    if (lex.eatKw(Keyword.AssRShift)) return new NodeBinaryAss(loc, e, new NodeBinaryRShift(lex.loc, e, parseExpr()));
+    if (lex.eatKw(Keyword.AssAdd)) return new NodeBinaryAss(loc, e, new NodeBinaryAdd(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssSub)) return new NodeBinaryAss(loc, e, new NodeBinarySub(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssMul)) return new NodeBinaryAss(loc, e, new NodeBinaryMul(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssDiv)) return new NodeBinaryAss(loc, e, new NodeBinaryRDiv(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssBitAnd)) return new NodeBinaryAss(loc, e, new NodeBinaryBitAnd(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssBitOr)) return new NodeBinaryAss(loc, e, new NodeBinaryBitOr(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssBitXor)) return new NodeBinaryAss(loc, e, new NodeBinaryBitXor(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssLShift)) return new NodeBinaryAss(loc, e, new NodeBinaryLShift(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssRShift)) return new NodeBinaryAss(loc, e, new NodeBinaryRShift(lex.loc, e, parseExpr()), true);
     return e;
   }
 
@@ -258,7 +258,7 @@ final class Parser {
 
   // higher-level parsers
   // can create new block
-  Node parseCodeBlock () {
+  NodeStatement parseCodeBlock () {
     auto loc = lex.loc;
     lex.expect(Keyword.LCurly);
     auto blk = new NodeBlock(loc);
@@ -268,7 +268,7 @@ final class Parser {
     return blk;
   }
 
-  Node parseReturn () {
+  NodeStatement parseReturn () {
     auto loc = lex.loc;
     lex.expect(Keyword.Return);
     auto res = new NodeReturn(loc, parseExpr());
@@ -276,7 +276,7 @@ final class Parser {
     return res;
   }
 
-  Node parseExit () {
+  NodeStatement parseExit () {
     auto loc = lex.loc;
     lex.expect(Keyword.Exit);
     auto res = new NodeReturn(loc);
@@ -284,7 +284,7 @@ final class Parser {
     return res;
   }
 
-  Node parseIf () {
+  NodeStatement parseIf () {
     auto loc = lex.loc;
     lex.expect(Keyword.If);
     auto ec = exprInParens();
@@ -302,7 +302,7 @@ final class Parser {
     return new NodeIf(loc, ec, et, ef);
   }
 
-  Node parseWhile () {
+  NodeStatement parseWhile () {
     auto res = new NodeWhile(lex.loc);
     auto oldbreak = curbreak;
     auto oldcont = curcont;
@@ -314,7 +314,7 @@ final class Parser {
     return res;
   }
 
-  Node parseDoUntil () {
+  NodeStatement parseDoUntil () {
     auto res = new NodeDoUntil(lex.loc);
     auto oldbreak = curbreak;
     auto oldcont = curcont;
@@ -328,7 +328,7 @@ final class Parser {
     return res;
   }
 
-  Node parseRepeat () {
+  NodeStatement parseRepeat () {
     auto res = new NodeRepeat(lex.loc);
     auto oldbreak = curbreak;
     auto oldcont = curcont;
@@ -340,7 +340,7 @@ final class Parser {
     return res;
   }
 
-  Node parseWith () {
+  NodeStatement parseWith () {
     auto loc = lex.loc;
     lex.expect(Keyword.With);
     auto wc = exprInParens();
@@ -353,7 +353,7 @@ final class Parser {
     return res;
   }
 
-  Node parseVar () {
+  NodeStatement parseVar () {
     auto loc = lex.loc;
     bool gvar = false;
     if (lex.eatKw(Keyword.Globalvar)) {
@@ -375,7 +375,7 @@ final class Parser {
     return vd;
   }
 
-  Node parseBreak () {
+  NodeStatement parseBreak () {
     if (curbreak is null) {
       if (strict) lex.error("`break` without loop/switch");
       warning(lex.loc, "`break` without loop/switch");
@@ -387,7 +387,7 @@ final class Parser {
     return res;
   }
 
-  Node parseCont () {
+  NodeStatement parseCont () {
     if (curcont is null) {
       if (strict) lex.error("`continue` without loop/switch");
       warning(lex.loc, "`continue` without loop/switch");
@@ -399,7 +399,7 @@ final class Parser {
     return res;
   }
 
-  Node parseFor () {
+  NodeStatement parseFor () {
     auto forn = new NodeFor(lex.loc);
     auto oldbreak = curbreak;
     auto oldcont = curcont;
@@ -420,7 +420,7 @@ final class Parser {
     return forn;
   }
 
-  Node parseSwitch () {
+  NodeStatement parseSwitch () {
     auto sw = new NodeSwitch(lex.loc);
     auto oldbreak = curbreak;
     scope(exit) { curbreak = oldbreak; }
@@ -443,7 +443,18 @@ final class Parser {
       if (lex != Keyword.Case && lex != Keyword.Default && lex != Keyword.RCurly) {
         auto blk = new NodeBlock(lex.loc);
         while (lex != Keyword.Case && lex != Keyword.Default && lex != Keyword.RCurly) {
-          blk.addStatement(parseStatement());
+          auto st = parseStatement();
+          // remove excessive blocks
+          while (cast(NodeBlock)st) {
+            auto bk = cast(NodeBlock)st;
+            if (bk.stats.length != 1) break;
+            if (auto b = cast(NodeStatement)bk.stats[0]) st = b; else break;
+          }
+          blk.addStatement(st);
+        }
+        // remove excessive blocks
+        while (blk.stats.length == 1) {
+          if (auto b = cast(NodeBlock)blk.stats[0]) blk = b; else break;
         }
         sw.appendCase(e, blk);
       } else {
@@ -455,7 +466,7 @@ final class Parser {
   }
 
   // can create new block
-  Node parseStatement () {
+  NodeStatement parseStatement () {
     // var declaration
     auto loc = lex.loc;
     // empty statement
