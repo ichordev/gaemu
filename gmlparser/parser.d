@@ -366,6 +366,7 @@ final class Parser {
     vd.asGlobal = gvar;
     while (lex.isId) {
       //if (vd.hasVar(lex.front.tstr)) lex.error("duplicate variable name '"~lex.front.istr~"'");
+      vd.locs ~= lex.loc;
       vd.names ~= lex.expectId;
       if (lex.isKw(Keyword.Ass)) lex.error("GML doesn't support variable initialization");
       if (!lex.eatKw(Keyword.Comma)) break;

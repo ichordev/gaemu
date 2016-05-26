@@ -264,6 +264,7 @@ class NodeStatement : Node {
 // local var
 class NodeVarDecl : NodeStatement {
   string[] names;
+  Loc[] locs; // for names
   bool asGlobal;
 
   this (Loc aloc) { super(aloc); }
@@ -351,19 +352,6 @@ class NodeWith : NodeStatement {
   this (Node ae, Loc aloc) { e = ae; loc = aloc; }
 
   override string toString () const { return "with ("~killEB(e.toString)~") "~ebody.toString; }
-}
-
-
-// ////////////////////////////////////////////////////////////////////////// //
-// `with_object` operator
-class NodeWithObject : NodeStatement {
-  Node e;
-  Node ebody;
-
-  this (Node ae) { e = ae; if (ae !is null) loc = ae.loc; }
-  this (Node ae, Loc aloc) { e = ae; loc = aloc; }
-
-  override string toString () const { return "with_object ("~killEB(e.toString)~") "~ebody.toString; }
 }
 
 

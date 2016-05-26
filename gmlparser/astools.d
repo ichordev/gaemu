@@ -52,7 +52,6 @@ bool hasReturn (Node nn) {
       (NodeStatementExpr n) => hasReturn(n.e),
       (NodeReturn n) => true,
       (NodeWith n) => (hasReturn(n.e) || hasReturn(n.ebody)),
-      (NodeWithObject n) => (hasReturn(n.e) || hasReturn(n.ebody)),
       (NodeIf n) => (hasReturn(n.ec) || hasReturn(n.et) || hasReturn(n.ef)),
       (NodeStatementBreak n) => false,
       (NodeStatementContinue n) => false,

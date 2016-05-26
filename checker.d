@@ -5,6 +5,8 @@ import std.stdio;
 import gmlparser;
 import ungmk;
 
+import gmlparser.anal;
+
 
 // ////////////////////////////////////////////////////////////////////////// //
 NodeFunc[] loadScript (string filename, bool warnings=true) {
@@ -296,7 +298,26 @@ void main (string[] args) {
     }
   }
 
-  if (funcs.length > 1) {
-    writeln(funcs.length, " functions parsed");
+  if (funcs.length > 0) {
+    writeln(funcs.length, " function", (funcs.length > 1 ? "s" : ""), " parsed");
+    foreach (auto fn; funcs) {
+      bool skip = false;
+      foreach (string name; [
+        "scrCreateTile",
+        "scrCreateTileObj",
+        "scrLoadCheckpoint",
+        "scrLoadLevel",
+        "scrMakeItem",
+        "scrSetCursorTile",
+        "scrSetVendingItem",
+        "scrTestLevel",
+        "scrMagicSigns",
+      ]) {
+        if (fn.name == name) { skip = true; break; }
+      }
+      if (skip) continue;
+      if (fn.name.length > 3 && fn.name[0..3] == "sui") continue;
+      analVars(null, fn);
+    }
   }
 }
