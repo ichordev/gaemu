@@ -27,6 +27,7 @@ auto selectNode(RetType=void, A...) (Node node, scope A args) => selector!RetTyp
 
 
 // ////////////////////////////////////////////////////////////////////////// //
+/*
 private string killEB (string r) {
   if (r.length < 2 || r[0] != '(' || r[$-1] != ')') return r;
   int depth = 1;
@@ -41,34 +42,32 @@ private string killEB (string r) {
   }
   return r[1..$-1];
 }
+*/
 
 
 // ////////////////////////////////////////////////////////////////////////// //
 class Node {
-  enum DontVisitMe; // mark nodes that should not be visited with this
-  enum CompoundVisitor; // mark struct/class fields that should be processed by visitor with this
-  enum SkipChildren = int.min;
-
   Loc loc;
   bool textual; // used for unary and binary nodes where, for example, "and" is used instead of "&&"
 
-  this (Node n=null) { if (n !is null) loc = n.loc; }
+  this () {}
+  this (Node n) { if (n !is null) loc = n.loc; }
   this (Loc aloc) { loc = aloc; }
 
-  override string toString () const { return "<invalid node:"~typeof(this).stringof~">"; }
+  override string toString () const => "<invalid node:"~typeof(this).stringof~">";
 }
 
 
 // ////////////////////////////////////////////////////////////////////////// //
 class NodeLiteral : Node {
-  this (Node n=null) { super(n); }
+  this () {}
   this (Loc aloc) { super(aloc); }
 }
 
 class NodeLiteralString : NodeLiteral {
   string val;
 
-  //this (Node n, string aval) { val = aval; super(n); }
+  this () {}
   this (Loc aloc, string aval) { val = aval; super(aloc); }
 
   override string toString () const {
@@ -84,7 +83,7 @@ class NodeLiteralString : NodeLiteral {
 class NodeLiteralNum : NodeLiteral {
   float val;
 
-  //this (float aval, Node n=null) { val = aval; super(n); }
+  this () {}
   this (Loc aloc, float aval) { val = aval; super(aloc); }
 
   override string toString () const { import std.string : format; return "%s".format(val); }
@@ -93,12 +92,12 @@ class NodeLiteralNum : NodeLiteral {
 
 // ////////////////////////////////////////////////////////////////////////// //
 class NodeExpr : Node {
-  string name;
+  string name; // various purposes
 
+  this () {}
   this (string aname) { name = aname; super(); }
   this (Node ae, string aname) { name = aname; super(ae); }
   this (Loc aloc, string aname) { name = aname; super(aloc); }
-  this (Node ae, Loc aloc, string aname) { name = aname; super(aloc); }
 }
 
 
@@ -106,16 +105,31 @@ class NodeExpr : Node {
 class NodeUnary : NodeExpr {
   Node e;
 
+  this () {}
   this (Node ae, string aname) { e = ae; super(ae, aname); }
-  this (Node ae, Loc aloc, string aname) { e = ae; super(ae, aloc, aname); }
+  this (Loc aloc, Node ae, string aname) { e = ae; super(aloc, aname); }
 
-  override string toString () const { return name~e.toString; }
+  override string toString () const => name~e.toString;
 }
 
+
+// ////////////////////////////////////////////////////////////////////////// //
+// "()" expression
+class NodeUnaryParens : NodeUnary {
+  this () {}
+  this (Node ae) { super(ae, "()"); }
+  this (Loc aloc, Node ae) { super(aloc, e, "()"); }
+
+  override string toString () const => "("~e.toString~")";
+}
+
+
+// ////////////////////////////////////////////////////////////////////////// //
 private enum UnaryOpMixin(string name, string opstr) =
   "class NodeUnary"~name~" : NodeUnary {\n"~
+  "   this () {}\n"~
   "   this (Node ae) { super(ae, \""~opstr~"\"); }\n"~
-  "   this (Node ae, Loc aloc) { super(ae, loc, \""~opstr~"\"); }\n"~
+  "   this (Loc aloc, Node ae) { super(loc, ae, \""~opstr~"\"); }\n"~
   "}";
 
 mixin(UnaryOpMixin!("Not", "!"));
@@ -127,32 +141,41 @@ mixin(UnaryOpMixin!("BitNeg", "~"));
 class NodeBinary : NodeExpr {
   Node el, er;
 
-  this (Node ael, Node aer, string aname) { el = ael; er = aer; super(ael, aname); }
-  this (Node ael, Node aer, Loc aloc, string aname) { el = ael; er = aer; super(ael, aloc, aname); }
+  this () {}
+  this (Node ael, Node aer, string aname) { el = ael; er = aer; super((ael !is null ? ael : aer), aname); }
+  this (Loc aloc, Node ael, Node aer, string aname) { el = ael; er = aer; super(aloc, aname); }
 
   override string toString () const {
-    if (name == "=") return el.toString~" = "~killEB(er.toString);
-    string spc = " ";
-    switch (name) {
-      case "+":
-      case "-":
-      case "*":
-      case "/":
-      case "|":
-      case "&":
-      case "^":
-        spc = "";
-        break;
-      default:
+    if (name.length > 1 && name != "<<" && name != ">>") return el.toString~" "~name~" "~er.toString;
+    // to correctly emit "a- -1"
+    if (name == "-") {
+      if (auto l = cast(NodeLiteralNum)er) return el.toString~(l.val < 0 ? " " : "")~name~(l.val < 0 ? " " : "")~er.toString;
     }
-    return "("~el.toString~spc~name~spc~er.toString~")";
+    return el.toString~name~er.toString;
   }
 }
 
-private enum BinaryOpMixin(string name, string opstr) =
-  "class NodeBinary"~name~" : NodeBinary {\n"~
+class NodeBinaryCmp : NodeBinary {
+  this () {}
+  this (Node ael, Node aer, string aname) { super(ael, aer, aname); }
+  this (Loc aloc, Node ael, Node aer, string aname) { super(aloc, ael, aer, aname); }
+
+  override string toString () const => el.toString~" "~name~" "~er.toString;
+}
+
+class NodeBinaryLogic : NodeBinary {
+  this () {}
+  this (Node ael, Node aer, string aname) { super(ael, aer, aname); }
+  this (Loc aloc, Node ael, Node aer, string aname) { super(aloc, ael, aer, aname); }
+
+  override string toString () const => el.toString~" "~name~" "~er.toString;
+}
+
+private enum BinaryOpMixin(string name, string opstr, string base="") =
+  "class NodeBinary"~name~" : NodeBinary"~base~" {\n"~
+  "   this () {}\n"~
   "   this (Node ael, Node aer) { super(ael, aer, \""~opstr~"\"); }\n"~
-  "   this (Node ael, Node aer, Loc aloc) { super(ael, aer, aloc, \""~opstr~"\"); }\n"~
+  "   this (Loc aloc, Node ael, Node aer) { super(aloc, ael, aer, \""~opstr~"\"); }\n"~
   "}";
 
 mixin(BinaryOpMixin!("Add", "+"));
@@ -167,34 +190,33 @@ mixin(BinaryOpMixin!("BitXor", "^"));
 mixin(BinaryOpMixin!("LShift", "<<"));
 mixin(BinaryOpMixin!("RShift", ">>"));
 
-mixin(BinaryOpMixin!("Less", "<"));
-mixin(BinaryOpMixin!("Great", ">"));
-mixin(BinaryOpMixin!("LessEqu", "<="));
-mixin(BinaryOpMixin!("GreatEqu", ">="));
-mixin(BinaryOpMixin!("Equ", "=="));
-mixin(BinaryOpMixin!("NotEqu", "!="));
+mixin(BinaryOpMixin!("Less", "<", "Cmp"));
+mixin(BinaryOpMixin!("Great", ">", "Cmp"));
+mixin(BinaryOpMixin!("LessEqu", "<=", "Cmp"));
+mixin(BinaryOpMixin!("GreatEqu", ">=", "Cmp"));
+mixin(BinaryOpMixin!("Equ", "==", "Cmp"));
+mixin(BinaryOpMixin!("NotEqu", "!=", "Cmp"));
 
-mixin(BinaryOpMixin!("LogOr", "||"));
-mixin(BinaryOpMixin!("LogAnd", "&&"));
-mixin(BinaryOpMixin!("LogXor", "^^"));
+mixin(BinaryOpMixin!("LogOr", "||", "Logic"));
+mixin(BinaryOpMixin!("LogAnd", "&&", "Logic"));
+mixin(BinaryOpMixin!("LogXor", "^^", "Logic"));
 
 mixin(BinaryOpMixin!("Ass", "=")); // assign ;-)
 
-// these nodes will never end up in AST, it's for parser
-mixin(BinaryOpMixin!("And", "and"));
-mixin(BinaryOpMixin!("Or", "or"));
-mixin(BinaryOpMixin!("Xor", "xor"));
+// these nodes will never end up in AST, they are here for parser needs
+mixin(BinaryOpMixin!("And", "and", "Logic"));
+mixin(BinaryOpMixin!("Or", "or", "Logic"));
+mixin(BinaryOpMixin!("Xor", "xor", "Logic"));
 
 
 // ////////////////////////////////////////////////////////////////////////// //
 // variable access (as lvalue and as rvalue)
 class NodeId : NodeExpr {
-  //string name; // for semantic
-
+  this () {}
   this (string aname) { super(aname); }
   this (Loc aloc, string aname) { super(aloc, aname); }
 
-  override string toString () const { return name; }
+  override string toString () const => name;
 }
 
 
@@ -203,13 +225,11 @@ class NodeId : NodeExpr {
 class NodeDot : NodeExpr {
   Node e; // base
 
+  this () {}
   this (Node ae, string name) { e = ae; super(ae, name); }
-  this (Node ae, Loc aloc, string name) { e = ae; super(ae, aloc, name); }
+  this (Loc aloc, Node ae, string name) { e = ae; super(aloc, name); }
 
-  override string toString () const {
-    if (cast(NodeId)e) return e.toString~"."~name;
-    return "("~e.toString~")."~name;
-  }
+  override string toString () const => e.toString~"."~name;
 }
 
 
@@ -219,13 +239,12 @@ class NodeIndex : NodeExpr {
   Node e; // base
   Node ei0, ei1; // indicies, `ei1` can be `null`
 
+  this () {}
   this (Node ae) { e = ae; super(ae, "index"); }
-  this (Node ae, Loc aloc) { e = ae; super(ae, aloc, "index"); }
+  this (Loc aloc, Node ae) { e = ae; super(aloc, "index"); }
 
   override string toString () const {
-    string res;
-    if (cast(NodeId)e) res = e.toString; else res = "("~e.toString~")";
-    res ~= "["~ei0.toString;
+    string res = e.toString~"["~ei0.toString;
     if (ei1 !is null) res ~= ", "~ei1.toString;
     return res~"]";
   }
@@ -238,14 +257,14 @@ class NodeFCall : NodeExpr {
   Node fe; // function expression
   Node[] args;
 
-  //this (Loc aloc, string aname) { fe = new NodeId(aname, aloc); super(aloc); }
+  this () {}
   this (Loc aloc, Node afe) { fe = afe; super(aloc, "fcall"); }
 
   override string toString () const {
     string res = fe.toString~"(";
     foreach (immutable idx, const Node a; args) {
       if (idx != 0) res ~= ", ";
-      res ~= killEB(a.toString);
+      res ~= a.toString;
     }
     return res~")";
   }
@@ -254,7 +273,7 @@ class NodeFCall : NodeExpr {
 
 // ////////////////////////////////////////////////////////////////////////// //
 class NodeStatement : Node {
-  this () { super(); }
+  this () {}
   this (Node ae) { super(ae); }
   this (Loc aloc) { super(aloc); }
 }
@@ -267,6 +286,7 @@ class NodeVarDecl : NodeStatement {
   Loc[] locs; // for names
   bool asGlobal;
 
+  this () {}
   this (Loc aloc) { super(aloc); }
 
   bool hasVar (const(char)[] name) {
@@ -300,7 +320,7 @@ class NodeBlock : NodeStatement {
 
   override string toString () const {
     string res = "{";
-    foreach (const n; stats) res ~= "\n"~killEB(n.toString);
+    foreach (const n; stats) res ~= "\n"~n.toString;
     res ~= "\n}";
     return res;
   }
@@ -312,7 +332,7 @@ class NodeStatementEmpty : NodeStatement {
   this () {}
   this (Loc aloc) { loc = aloc; }
 
-  override string toString () const { return "{}"; }
+  override string toString () const => "{}";
 }
 
 
@@ -321,12 +341,11 @@ class NodeStatementEmpty : NodeStatement {
 class NodeStatementExpr : NodeStatement {
   Node e; // expression
 
-  this (Node ae) { e = ae; super(ae); if (ae !is null) loc = ae.loc; }
-  this (Node ae, Loc aloc) { e = ae; loc = aloc; }
+  this () {}
+  this (Node ae) { e = ae; super(ae); }
+  this (Loc aloc, Node ae) { e = ae; super(aloc); }
 
-  override string toString () const {
-    return killEB(e.toString)~";";
-  }
+  override string toString () const => e.toString~";";
 }
 
 
@@ -335,10 +354,11 @@ class NodeStatementExpr : NodeStatement {
 class NodeReturn : NodeStatement {
   Node e; // return expression (if any); can be `null`
 
-  this (Node ae) { e = ae; if (ae !is null) loc = ae.loc; }
-  this (Node ae, Loc aloc) { e = ae; loc = aloc; }
+  this () {}
+  this (Node ae) { e = ae; super(ae); }
+  this (Loc aloc, Node ae=null) { e = ae; super(aloc); }
 
-  override string toString () const { return (e !is null ? "return "~e.toString~";" : "exit;"); }
+  override string toString () const => (e !is null ? "return "~e.toString~";" : "exit;");
 }
 
 
@@ -348,10 +368,11 @@ class NodeWith : NodeStatement {
   Node e;
   Node ebody;
 
-  this (Node ae) { e = ae; if (ae !is null) loc = ae.loc; }
-  this (Node ae, Loc aloc) { e = ae; loc = aloc; }
+  this () {}
+  this (Node ae) { e = ae; super(ae); }
+  this (Loc aloc, Node ae) { e = ae; super(aloc); }
 
-  override string toString () const { return "with ("~killEB(e.toString)~") "~ebody.toString; }
+  override string toString () const => "with ("~e.toString~") "~ebody.toString;
 }
 
 
@@ -360,12 +381,11 @@ class NodeWith : NodeStatement {
 class NodeIf : NodeStatement {
   Node ec, et, ef;
 
-  this (Node aec, Node aet, Node aef) { ec = aec; et = aet; ef = aef; super(aec); }
-  this (Node aec, Node aet, Node aef, Loc aloc) { ec = aec; et = aet; ef = aef; loc = aloc; }
+  this () {}
+  this (Node aec, Node aet, Node aef) { ec = aec; et = aet; ef = aef; super((aec !is null ? aec : aet ! is null ? aet : aef)); }
+  this (Loc aloc, Node aec, Node aet, Node aef) { ec = aec; et = aet; ef = aef; super(aloc); }
 
-  override string toString () const {
-    return "if ("~killEB(ec.toString)~") "~et.toString~(ef !is null && !cast(NodeStatementEmpty)ef ? " else "~ef.toString : "");
-  }
+  override string toString () const => "if ("~ec.toString~") "~et.toString~(ef !is null && !cast(NodeStatementEmpty)ef ? " else "~ef.toString : "");
 }
 
 
@@ -374,6 +394,7 @@ class NodeIf : NodeStatement {
 class NodeStatementBreakCont : NodeStatement {
   Node ewhich; // loop/switch node
 
+  this () {}
   this (Loc aloc, Node awhich) { ewhich = awhich; super(aloc); }
 }
 
@@ -381,14 +402,14 @@ class NodeStatementBreakCont : NodeStatement {
 class NodeStatementBreak : NodeStatementBreakCont {
   this (Loc aloc, Node awhich) { super(aloc, awhich); }
 
-  override string toString () const { return "break;"; }
+  override string toString () const => "break;";
 }
 
 // `continue` operator
 class NodeStatementContinue : NodeStatementBreakCont {
   this (Loc aloc, Node awhich) { super(aloc, awhich); }
 
-  override string toString () const { return "continue;"; }
+  override string toString () const => "continue;";
 }
 
 
@@ -399,15 +420,9 @@ class NodeFor : NodeStatement {
   Node ebody;
 
   this () {}
-  this (Loc aloc) { loc = aloc; }
+  this (Loc aloc) { super(aloc); }
 
-  override string toString () const {
-    if (cast(NodeBlock)ebody) {
-      return "for ("~killEB(einit.toString)~"; "~killEB(econd.toString)~"; "~killEB(enext.toString)~") "~killEB(ebody.toString);
-    } else {
-      return "for ("~killEB(einit.toString)~"; "~killEB(econd.toString)~"; "~killEB(enext.toString)~") {\n"~killEB(ebody.toString)~"\n}";
-    }
-  }
+  override string toString () const => "for ("~einit.toString~"; "~econd.toString~"; "~enext.toString~") "~ebody.toString;
 }
 
 
@@ -418,15 +433,9 @@ class NodeWhile : NodeStatement {
   Node ebody;
 
   this () {}
-  this (Loc aloc) { loc = aloc; }
+  this (Loc aloc) { super(aloc); }
 
-  override string toString () const {
-    if (cast(NodeBlock)ebody) {
-      return "while ("~killEB(econd.toString)~" "~killEB(ebody.toString);
-    } else {
-      return "while ("~killEB(econd.toString)~" {\n"~ebody.toString~"\n}";
-    }
-  }
+  override string toString () const => "while ("~econd.toString~") "~ebody.toString;
 }
 
 
@@ -437,15 +446,9 @@ class NodeDoUntil : NodeStatement {
   Node ebody;
 
   this () {}
-  this (Loc aloc) { loc = aloc; }
+  this (Loc aloc) { super(aloc); }
 
-  override string toString () const {
-    if (cast(NodeBlock)ebody) {
-      return "do "~ebody.toString~"\n while ("~killEB(econd.toString)~");";
-    } else {
-      return "do {\n"~killEB(ebody.toString)~"\n} while ("~killEB(econd.toString)~");";
-    }
-  }
+  override string toString () const => "do "~ebody.toString~" until ("~econd.toString~");";
 }
 
 
@@ -456,15 +459,9 @@ class NodeRepeat : NodeStatement {
   Node ebody;
 
   this () {}
-  this (Loc aloc) { loc = aloc; }
+  this (Loc aloc) { super(aloc); }
 
-  override string toString () const {
-    if (cast(NodeBlock)ebody) {
-      return "repeat("~killEB(ecount.toString)~") "~ebody.toString;
-    } else {
-      return "repeat("~killEB(ecount.toString)~") {\n"~killEB(ebody.toString)~"\n}";
-    }
-  }
+  override string toString () const => "repeat ("~ecount.toString~") "~ebody.toString;
 }
 
 
@@ -479,7 +476,7 @@ class NodeSwitch : NodeStatement {
   Case[] cases; // never mutate directly!
 
   this () {}
-  this (Loc aloc) { loc = aloc; }
+  this (Loc aloc) { super(aloc); }
 
   void appendCase (Node ae, Node ast) {
     if (ae is null) {
@@ -491,14 +488,14 @@ class NodeSwitch : NodeStatement {
   }
 
   override string toString () const {
-    string res = "switch ("~killEB(e.toString)~") {";
+    string res = "switch ("~e.toString~") {";
     foreach (ref c; cases) {
       if (c.e !is null) {
-        res ~= "\ncase "~killEB(c.e.toString)~":";
+        res ~= "\ncase "~c.e.toString~":";
       } else {
         res ~= "\ndefault:";
       }
-      res ~= (c.st !is null ? " "~killEB(c.st.toString) : "");
+      res ~= (c.st !is null ? " "~c.st.toString : "");
     }
     return res~"\n}";
   }
@@ -511,15 +508,8 @@ class NodeFunc : Node {
   string name;
   NodeBlock ebody;
 
-  this (string aname, Loc aloc) { name = aname; loc = aloc; }
+  this () {}
+  this (Loc aloc, string aname) { name = aname; super(aloc); }
 
-  override string toString () const {
-    string res = "function "~name~" ";
-    if (cast(NodeBlock)ebody) {
-      res ~= ebody.toString;
-    } else {
-      res ~= "{\n"~killEB(ebody.toString)~"\n}";
-    }
-    return res;
-  }
+  override string toString () const => "function "~name~" "~ebody.toString;
 }

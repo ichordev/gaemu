@@ -123,7 +123,7 @@ final class Parser {
       auto res = parseExpr();
       if (lex != Keyword.RParen) errorAt(lex.loc, "`)` expected for `(` at "~loc.toStringNoFile);
       lex.expect(Keyword.RParen);
-      return res;
+      return new NodeUnaryParens(loc, res);
     }
 
     // `true`, `false`, and other funny keywords
@@ -149,7 +149,7 @@ final class Parser {
   Node parseIndexing (Node n) {
     auto loc = lex.loc;
     //lex.expect(Keyword.LBracket); // eaten
-    auto res = new NodeIndex(n, loc);
+    auto res = new NodeIndex(loc, n);
     res.ei0 = parseExpr();
     if (lex.eatKw(Keyword.Comma)) {
       res.ei1 = parseExpr();
@@ -161,7 +161,7 @@ final class Parser {
   Node parseExprPostfix (Node n) {
     for (;;) {
       auto nn = lex.select!(Node, "pop-nondefault")(
-        Keyword.Dot, (Loc aloc) => new NodeDot(n, aloc, lex.expectId),
+        Keyword.Dot, (Loc aloc) => new NodeDot(aloc, n, lex.expectId),
         Keyword.LParen, (Loc aloc) => parseFCallArgs(new NodeFCall(aloc, n)),
         Keyword.LBracket, (Loc aloc) => parseIndexing(n),
         () => null, // special
@@ -175,10 +175,10 @@ final class Parser {
     auto loc = lex.loc;
 
     if (lex.eatKw(Keyword.Add)) return parseExprUnary();
-    if (lex.eatKw(Keyword.Sub)) return new NodeUnaryNeg(parseExprUnary(), loc);
-    if (lex.eatKw(Keyword.LogNot)) return new NodeUnaryNot(parseExprUnary(), loc);
-    if (lex.eatKw(Keyword.Not)) { auto res = new NodeUnaryNot(parseExprUnary(), loc); res.textual = true; return res; }
-    if (lex.eatKw(Keyword.BitNeg)) return new NodeUnaryBitNeg(parseExprUnary(), loc);
+    if (lex.eatKw(Keyword.Sub)) return new NodeUnaryNeg(loc, parseExprUnary());
+    if (lex.eatKw(Keyword.LogNot)) return new NodeUnaryNot(loc, parseExprUnary());
+    if (lex.eatKw(Keyword.Not)) { auto res = new NodeUnaryNot(loc, parseExprUnary()); res.textual = true; return res; }
+    if (lex.eatKw(Keyword.BitNeg)) return new NodeUnaryBitNeg(loc, parseExprUnary());
 
     auto res = parseExprPrimary();
     return parseExprPostfix(res);
@@ -202,16 +202,16 @@ final class Parser {
   Node parseAssExpr () {
     auto e = parseExprLogOr(true); // stop on assign
     auto loc = lex.loc;
-    if (lex.eatKw(Keyword.Ass)) return new NodeBinaryAss(e, parseExpr(), loc);
-    if (lex.eatKw(Keyword.AssAdd)) return new NodeBinaryAss(e, new NodeBinaryAdd(e, parseExpr(), lex.loc), loc);
-    if (lex.eatKw(Keyword.AssSub)) return new NodeBinaryAss(e, new NodeBinarySub(e, parseExpr(), lex.loc), loc);
-    if (lex.eatKw(Keyword.AssMul)) return new NodeBinaryAss(e, new NodeBinaryMul(e, parseExpr(), lex.loc), loc);
-    if (lex.eatKw(Keyword.AssDiv)) return new NodeBinaryAss(e, new NodeBinaryRDiv(e, parseExpr(), lex.loc), loc);
-    if (lex.eatKw(Keyword.AssBitAnd)) return new NodeBinaryAss(e, new NodeBinaryBitAnd(e, parseExpr(), lex.loc), loc);
-    if (lex.eatKw(Keyword.AssBitOr)) return new NodeBinaryAss(e, new NodeBinaryBitOr(e, parseExpr(), lex.loc), loc);
-    if (lex.eatKw(Keyword.AssBitXor)) return new NodeBinaryAss(e, new NodeBinaryBitXor(e, parseExpr(), lex.loc), loc);
-    if (lex.eatKw(Keyword.AssLShift)) return new NodeBinaryAss(e, new NodeBinaryLShift(e, parseExpr(), lex.loc), loc);
-    if (lex.eatKw(Keyword.AssRShift)) return new NodeBinaryAss(e, new NodeBinaryRShift(e, parseExpr(), lex.loc), loc);
+    if (lex.eatKw(Keyword.Ass)) return new NodeBinaryAss(loc, e, parseExpr());
+    if (lex.eatKw(Keyword.AssAdd)) return new NodeBinaryAss(loc, e, new NodeBinaryAdd(lex.loc, e, parseExpr()));
+    if (lex.eatKw(Keyword.AssSub)) return new NodeBinaryAss(loc, e, new NodeBinarySub(lex.loc, e, parseExpr()));
+    if (lex.eatKw(Keyword.AssMul)) return new NodeBinaryAss(loc, e, new NodeBinaryMul(lex.loc, e, parseExpr()));
+    if (lex.eatKw(Keyword.AssDiv)) return new NodeBinaryAss(loc, e, new NodeBinaryRDiv(lex.loc, e, parseExpr()));
+    if (lex.eatKw(Keyword.AssBitAnd)) return new NodeBinaryAss(loc, e, new NodeBinaryBitAnd(lex.loc, e, parseExpr()));
+    if (lex.eatKw(Keyword.AssBitOr)) return new NodeBinaryAss(loc, e, new NodeBinaryBitOr(lex.loc, e, parseExpr()));
+    if (lex.eatKw(Keyword.AssBitXor)) return new NodeBinaryAss(loc, e, new NodeBinaryBitXor(lex.loc, e, parseExpr()));
+    if (lex.eatKw(Keyword.AssLShift)) return new NodeBinaryAss(loc, e, new NodeBinaryLShift(lex.loc, e, parseExpr()));
+    if (lex.eatKw(Keyword.AssRShift)) return new NodeBinaryAss(loc, e, new NodeBinaryRShift(lex.loc, e, parseExpr()));
     return e;
   }
 
@@ -271,7 +271,7 @@ final class Parser {
   Node parseReturn () {
     auto loc = lex.loc;
     lex.expect(Keyword.Return);
-    auto res = new NodeReturn(parseExpr(), loc);
+    auto res = new NodeReturn(loc, parseExpr());
     endOfStatement();
     return res;
   }
@@ -279,7 +279,7 @@ final class Parser {
   Node parseExit () {
     auto loc = lex.loc;
     lex.expect(Keyword.Exit);
-    auto res = new NodeReturn(null, loc);
+    auto res = new NodeReturn(loc);
     endOfStatement();
     return res;
   }
@@ -299,7 +299,7 @@ final class Parser {
       }
     }
     auto ef = (lex.eatKw(Keyword.Else) ? parseStatement() : null);
-    return new NodeIf(ec, et, ef, loc);
+    return new NodeIf(loc, ec, et, ef);
   }
 
   Node parseWhile () {
@@ -344,7 +344,7 @@ final class Parser {
     auto loc = lex.loc;
     lex.expect(Keyword.With);
     auto wc = exprInParens();
-    auto res = new NodeWith(wc, loc);
+    auto res = new NodeWith(loc, wc);
     auto oldbreak = curbreak;
     auto oldcont = curcont;
     scope(exit) { curbreak = oldbreak; curcont = oldcont; }
@@ -516,7 +516,7 @@ final class Parser {
 
   // whole input
   NodeFunc parseFunctionBody (string name) {
-    auto fn = new NodeFunc(name, lex.loc);
+    auto fn = new NodeFunc(lex.loc, name);
     fn.ebody = new NodeBlock(lex.loc);
     while (!lex.empty) fn.ebody.addStatement(parseStatement());
     return fn;
@@ -528,7 +528,7 @@ final class Parser {
     lex.expect(Keyword.Function);
     if (!lex.isId) lex.error("function name expected");
     string name = lex.expectId;
-    auto fn = new NodeFunc(name, lex.loc);
+    auto fn = new NodeFunc(loc, name);
     fn.ebody = cast(NodeBlock)parseCodeBlock();
     assert(fn.ebody !is null);
     return fn;
