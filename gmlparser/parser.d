@@ -218,7 +218,7 @@ final class Parser {
   // ////////////////////////////////////////////////////////////////////// //
   private import std.stdio : File, stdout;
 
-  void printCaret (Loc loc, File ofile) {
+  void printCaret (Loc loc, File ofile=stdout) {
     auto line = lex.line(loc.line);
     if (line.length == 0) return;
     ofile.writeln(line);
