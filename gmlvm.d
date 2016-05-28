@@ -397,9 +397,11 @@ private:
           if (vd.asGlobal) {
             globals[name] = 0;
           } else {
-            firstFreeSlot = allocSlot(vd.locs[idx]);
-            locals[name] = cast(ubyte)firstFreeSlot;
-            ++firstFreeSlot;
+            // don't allocate slots for locals here, we can remove some locals due to arguments aliasing later
+            //firstFreeSlot = allocSlot(vd.locs[idx]);
+            //locals[name] = cast(ubyte)firstFreeSlot;
+            //++firstFreeSlot;
+            locals[name] = 42; // temporary value
           }
         }
       }
@@ -469,7 +471,11 @@ private:
             return VisitRes.Continue;
           });
         }
-        // TODO: remove aliases from locals (we don't need slots for 'em)
+        // remove aliases from locals (we don't need slots for 'em)
+        foreach (immutable idx, string an; aaliases) {
+          if (an.length == 0) continue;
+          locals.remove(an);
+        }
         // dump aliases
         {
           import std.stdio : stderr;
@@ -478,6 +484,13 @@ private:
           }
         }
       }
+    }
+
+    // now assign slots to locals
+    foreach (string name; locals.keys) {
+      firstFreeSlot = allocSlot(vdecls[name]);
+      locals[name] = cast(ubyte)firstFreeSlot;
+      ++firstFreeSlot;
     }
 
     void emitPLit (Loc loc, ubyte dest, Real v) {
