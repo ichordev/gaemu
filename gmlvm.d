@@ -694,10 +694,10 @@ private:
 
 private:
   static struct CallFrame {
-    uint script;
+    uint script; // script id
     uint bp; // base pointer (address of the current frame in stack)
-    uint pc; // current pc; will be set on "call"
-    ubyte rval; // slot for return value; will be set on "call"
+    uint pc; // current pc; will be set on "call"; it is used by callee
+    ubyte rval; // slot for return value; will be set on "call"; it is used by callee
     @disable this (this);
   }
   CallFrame[32768] frames;
