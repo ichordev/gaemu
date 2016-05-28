@@ -59,6 +59,7 @@ Real buildStrId (int id) {
 // ////////////////////////////////////////////////////////////////////////// //
 enum Op {
   nop,
+  skip, // skip current instruction; it usually has 3-byte payload
 
   copy, // copy regs; dest: dest reg; op0: first reg to copy; op1: number of regs to copy (0: no copy, lol)
 
@@ -87,7 +88,7 @@ enum Op {
   land,
   lxor,
 
-  plit, // dest becomes pool slot val (val: 2 bytes) -- load value from pool slot
+  plit, // dest becomes pool slot val (val: 2 bytes) -- load value from pool slot; if val is 0xffff, next instruction is skip
   ilit, // dest becomes ilit val (val: short) -- load small integer literal
   xlit, // dest becomes integer(!) val (val: short) -- load small integer literal
 
@@ -102,14 +103,6 @@ enum Op {
         // note that there should be no used registers after those (as that will be used as new function frame regs)
 
   //tcall, // same as call, but does tail call
-
-  prim, // call "primitive" (built-in function); dest is result; op0: call frame (see below); op1: number of args
-        // call frame is:
-        //   new function frame (starting with return value)
-        //   int primid (after op1+3 slots)
-        // note that there should be no used registers after those (as that will be used as new function frame regs)
-
-  //tprim, // same as prim, but does tail call
 
   enter, // op0: number of stack slots used (including result and args); op1: number of locals
          // any function will ALWAYS starts with this
@@ -168,6 +161,9 @@ public:
   this () {
     code.length = 1;
     scriptPCs.length = 1;
+    // preallocate small strings
+    spool ~= null;
+    foreach (ubyte c; 0..256) spool ~= ""~cast(char)c;
   }
 
   void compile (NodeFunc fn) {
@@ -370,25 +366,49 @@ private:
       return VisitRes.Continue;
     });
 
-    ushort allocNumConst (Real v, Loc loc) {
-      //FIXME: speed it up!
-      foreach (immutable idx, Real vp; vpool) {
-        if (vp == v) return cast(ushort)idx;
+    void emitPLit (Loc loc, ubyte dest, Real v) {
+      uint vpidx = uint.max;
+      if (isReal(v)) {
+        // number
+        import core.stdc.math : lrint;
+        if (lrint(v) == v && lrint(v) >= short.min && lrint(v) <= short.max) {
+          emit2Bytes(Op.ilit, dest, cast(short)lrint(v));
+          return;
+        }
+        //FIXME: speed it up!
+        foreach (immutable idx, Real vp; vpool) if (vp == v) { vpidx = cast(uint)idx; break; }
+      } else if (isString(v)) {
+        // string
+        //FIXME: speed it up!
+        auto sid = v.getStrId;
+        foreach (immutable idx, Real vp; vpool) if (vp.isString && vp.getStrId == sid) { vpidx = cast(uint)idx; break; }
+      } else {
+        assert(0, "wtf?!");
       }
-      auto vpi = cast(uint)vpool.length;
-      if (vpi > ushort.max) compileError(loc, "too many constants");
-      vpool ~= v;
-      return cast(ushort)vpi;
+      if (vpidx == uint.max) {
+        vpidx = cast(uint)vpool.length;
+        if (vpidx >= 0xffffff) compileError(loc, "too many constants");
+        vpool ~= v;
+      }
+      if (vpidx < ushort.max) {
+        emit2Bytes(Op.plit, dest, cast(ushort)vpidx);
+      } else {
+        // special form
+        emit2Bytes(Op.plit, dest, cast(short)ushort.max);
+        emit3Bytes(Op.skip, vpidx);
+      }
     }
 
-    ushort allocStrConst (string s, Loc loc) {
+    uint allocStrConst (string s, Loc loc) {
+      if (s.length == 0) return 0;
       //FIXME: speed it up!
       foreach (immutable idx, string vp; spool) {
-        if (vp == s) return allocNumConst(buildStrId(cast(uint)idx), loc);
+        if (vp == s) return cast(ushort)idx;
       }
       auto sidx = cast(uint)spool.length;
+      if (sidx >= 0xffffff) compileError(loc, "too many strings");
       spool ~= s;
-      return allocNumConst(buildStrId(sidx), loc);
+      return sidx;
     }
 
     int varSlot (string name) {
@@ -440,18 +460,14 @@ private:
 
       return selectNode!ubyte(nn,
         (NodeLiteralNum n) {
-          import core.stdc.math : lrint;
           auto dest = allocSlot(n.loc, ddest);
-          if (lrint(n.val) == n.val && lrint(n.val) >= short.min && lrint(n.val) <= short.max) {
-            emit2Bytes(Op.ilit, dest, cast(short)lrint(n.val));
-          } else {
-            emit2Bytes(Op.plit, dest, allocNumConst(n.val, n.loc));
-          }
+          emitPLit(n.loc, dest, n.val);
           return dest;
         },
         (NodeLiteralStr n) {
           auto dest = allocSlot(n.loc, ddest);
-          emit2Bytes(Op.plit, dest, allocStrConst(n.val, n.loc));
+          auto sid = allocStrConst(n.val, n.loc);
+          emitPLit(n.loc, dest, buildStrId(sid));
           return dest;
         },
         (NodeUnaryParens n) => compileExpr(n.e, ddest, wantref),
@@ -860,7 +876,12 @@ private:
 
         case Op.plit: // dest becomes pool slot val (val: 2 bytes) -- load value from pool slot
           auto dest = opx.opDest;
-          bp[dest] = vpool[opx.op2Byte];
+          uint idx = cast(ushort)opx.op2Byte;
+          if (idx == ushort.max) {
+            assert((*cptr).opCode == Op.skip);
+            idx = (*cptr++).op3Byte;
+          }
+          bp[dest] = vpool.ptr[idx];
           break;
         case Op.ilit: // dest becomes ilit val (val: short) -- load small integer literal
           auto dest = opx.opDest;
@@ -919,14 +940,6 @@ private:
           break;
 
         //tcall, // same as call, but does tail call
-
-        //case Op.prim: // call "primitive" (built-in function); dest is result; op0: call frame (see below); op1: number of args
-              // call frame is:
-              //   new function frame (starting with return value)
-              //   int primid (after op1+3 slots)
-              // note that there should be no used registers after those (as that will be used as new function frame regs)
-
-        //tprim, // same as prim, but does tail call
 
         case Op.enter: // op0: number of stack slots used (including result and args); op1: number of locals
           if (curframe.bp+opx.opOp0 > stack.length) {
@@ -995,6 +1008,7 @@ static:
   shared static this () {
     with(OpArgs) opargs = [
       Op.nop: None,
+      Op.skip: None,
       Op.copy: DestOp0Op1,
       Op.lnot: DestOp0, //: lognot
       Op.neg: DestOp0,
@@ -1031,9 +1045,6 @@ static:
 
       Op.call: DestCall,
       //Op.tcall: DestCall,
-
-      Op.prim: DestCall,
-      //Op.tprim: DestCall,
 
       Op.enter: Op0Op1,
 
