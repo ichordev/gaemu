@@ -95,7 +95,7 @@ enum Op {
 
   jump, // addr: 3 bytes
   xtrue, // dest is reg to check; skip next instruction if dest is "gml true" (i.e. fabs(v) >= 0.5`)
-  xfalse, // dest is reg to check; skip next instruction if dest is "gml true" (i.e. fabs(v) >= 0.5`)
+  xfalse, // dest is reg to check; skip next instruction if dest is "gml false" (i.e. fabs(v) >= 0.5`)
 
   call, // dest is result; op0: call frame (see below); op1: number of args
         // call frame is:
@@ -103,7 +103,7 @@ enum Op {
         //   int scriptid (after op1+3 slots)
         // note that there should be no used registers after those (as that will be used as new function frame regs)
 
-  enter, // op0: number of stack slots used (including result and args); op1: number of locals
+  enter, // dest: number of arguments used; op0: number of stack slots used (including result and args); op1: number of locals
          // any function will ALWAYS starts with this
 
   ret, // dest is retvalue; it is copied to reg0; other stack items are discarded
@@ -320,7 +320,7 @@ private:
     }
 
     // this starts "jump chain", return new chain id
-    uint emitJumpChain (uint chain, Op op) {
+    uint emitJumpChain (uint chain, Op op=Op.jump) {
       assert(chain <= 0xffffff);
       auto res = cast(uint)code.length;
       code ~= cast(uint)op|(chain<<8);
@@ -696,6 +696,11 @@ private:
       );
     }
 
+    uint breakChain; // current jump chain for `break`
+    uint contChain; // current jump chain for `continue`
+    bool contChainIsAddr; // is `contChain` an address, not a chain?
+    bool inSwitch; // are we in `switch` now?
+
     void compile (Node nn) {
       assert(nn !is null);
       nn.pcs = pc;
@@ -739,28 +744,125 @@ private:
           fixJumpChain(jfc, pc);
         },
         (NodeStatementBreak n) {
-          assert(0);
+          breakChain = emitJumpChain(breakChain);
         },
         (NodeStatementContinue n) {
-          assert(0);
+          if (contChainIsAddr) {
+            emitJumpTo(Op.jump, contChain);
+          } else {
+            contChain = emitJumpChain(contChain);
+          }
         },
         (NodeFor n) {
-          /*
-          if (auto r = visitNodes(n.einit, dg)) return r;
-          if (auto r = visitNodes(n.econd, dg)) return r;
-          if (auto r = visitNodes(n.enext, dg)) return r;
-          return visitNodes(n.ebody, dg);
-          */
-          assert(0);
+          freeSlot(compileExpr(n.einit));
+          // generate code like this:
+          //   jump to "continue"
+          //   body
+          //  continue:
+          //   cond
+          //   jumptostart
+          auto obc = breakChain;
+          auto occ = contChain;
+          auto cca = contChainIsAddr;
+          scope(exit) { breakChain = obc; contChain = occ; contChainIsAddr = cca; }
+          // jump to "continue"
+          contChain = emitJumpChain(0); // start new chain
+          contChainIsAddr = false;
+          breakChain = 0; // start new chain
+          auto stpc = pc;
+          // body
+          compile(n.ebody);
+          // fix "continue"
+          fixJumpChain(contChain, pc);
+          // condition
+          auto dest = compileExpr(n.econd);
+          freeSlot(dest); // yep, right here
+          emit(Op.xfalse); // skip jump on false
+          emitJumpTo(Op.jump, stpc);
+          // "break" is here
+          fixJumpChain(breakChain, pc);
         },
         (NodeWhile n) {
-          assert(0);
+          // nothing fancy
+          auto obc = breakChain;
+          auto occ = contChain;
+          auto cca = contChainIsAddr;
+          scope(exit) { breakChain = obc; contChain = occ; contChainIsAddr = cca; }
+          // new break chain
+          breakChain = 0;
+          // "continue" is here
+          contChain = pc;
+          contChainIsAddr = true;
+          // condition
+          auto dest = compileExpr(n.econd);
+          freeSlot(dest); // yep, right here
+          emit(Op.xfalse); // skip jump on false
+          breakChain = emitJumpChain(breakChain); // get out of here
+          // body
+          compile(n.ebody);
+          // and again
+          emitJumpTo(Op.jump, contChain);
+          // "break" is here
+          fixJumpChain(breakChain, pc);
         },
         (NodeDoUntil n) {
-          assert(0);
+          // nothing fancy
+          auto obc = breakChain;
+          auto occ = contChain;
+          auto cca = contChainIsAddr;
+          scope(exit) { breakChain = obc; contChain = occ; contChainIsAddr = cca; }
+          auto stpc = pc;
+          // new break chain
+          breakChain = 0;
+          // new continue chain
+          contChain = 0;
+          contChainIsAddr = false;
+          // body
+          compile(n.ebody);
+          // "continue" is here
+          fixJumpChain(contChain, pc);
+          // condition
+          auto dest = compileExpr(n.econd);
+          freeSlot(dest); // yep, right here
+          emit(Op.xfalse); // skip jump on false
+          // and again
+          emitJumpTo(Op.jump, stpc);
+          // "break" is here
+          fixJumpChain(breakChain, pc);
         },
         (NodeRepeat n) {
-          assert(0);
+          // allocate node for counter
+          auto cnt = compileExpr(n.ecount);
+          // allocate "1" constant (we will need it)
+          auto one = allocSlot(n.loc);
+          emit2Bytes(Op.ilit, one, cast(short)1);
+          // alice in chains
+          auto obc = breakChain;
+          auto occ = contChain;
+          auto cca = contChainIsAddr;
+          scope(exit) { breakChain = obc; contChain = occ; contChainIsAddr = cca; }
+          // new break chain
+          breakChain = 0;
+          // "continue" is here
+          contChain = pc;
+          contChainIsAddr = true;
+          // check and decrement counter
+          auto ck = allocSlot(n.ecount.loc);
+          freeSlot(ck); // we don't need that slot anymore, allow body to reuse it
+          emit(Op.ge, ck, cnt, one);
+          emit(Op.xtrue, ck);
+          breakChain = emitJumpChain(breakChain); // get out of here
+          // decrement counter in-place
+          emit(Op.sub, cnt, cnt, one);
+          // body
+          compile(n.ebody);
+          // and again
+          emitJumpTo(Op.jump, contChain);
+          // "break" is here
+          fixJumpChain(breakChain, pc);
+          // free used slots
+          freeSlot(one);
+          freeSlot(cnt);
         },
         (NodeSwitch n) {
           /*
@@ -1026,7 +1128,7 @@ private:
         case Op.xtrue: // dest is reg to check; skip next instruction if dest is "gml true" (i.e. fabs(v) >= 0.5`)
           if (lrint(bp[opx.opDest]) != 0) ++cptr;
           break;
-        case Op.xfalse: // dest is reg to check; skip next instruction if dest is "gml true" (i.e. fabs(v) >= 0.5`)
+        case Op.xfalse: // dest is reg to check; skip next instruction if dest is "gml false" (i.e. fabs(v) >= 0.5`)
           if (lrint(bp[opx.opDest]) == 0) ++cptr;
           break;
 
@@ -1175,7 +1277,7 @@ static:
 
       Op.call: DestCall,
 
-      Op.enter: Op0Op1,
+      Op.enter: DestOp0Op1,
 
       Op.ret: Dest,
 
