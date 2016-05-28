@@ -103,8 +103,6 @@ enum Op {
         //   int scriptid (after op1+3 slots)
         // note that there should be no used registers after those (as that will be used as new function frame regs)
 
-  //tcall, // same as call, but does tail call
-
   enter, // op0: number of stack slots used (including result and args); op1: number of locals
          // any function will ALWAYS starts with this
 
@@ -949,33 +947,31 @@ private:
           }
           debug(vm_exec) {
             import std.stdio : stderr;
-            /*
-            foreach (auto kv; scripts.byKeyValue) {
-              if (kv.value == sid) {
-                stderr.writeln("calling '", kv.key, "'");
-                foreach (immutable aidx; 0..opx.opOp1) {
-                  stderr.writeln("  ", bp[opx.opOp0+Slot.Argument0+aidx]);
-                }
-              }
-            }
-            */
             stderr.writeln("calling '", scriptNum2Name[sid], "'");
             foreach (immutable aidx; 0..opx.opOp1) stderr.writeln("  ", bp[opx.opOp0+Slot.Argument0+aidx]);
           }
-          bp[opx.opOp0+Slot.Argument0+opx.opOp1] = 0; // just in case
-          bp[opx.opOp0..opx.opOp0+Slot.Argument0] = bp[0..Slot.Argument0]; // copy `self` and `other`
-          curframe.pc = cast(uint)(cptr-code.ptr);
-          curframe.rval = opx.opDest;
-          ++curframe;
-          curframe.bp = curframe[-1].bp+opx.opOp0;
+          // if this is tail call, just do it as tail call then
+          // but don't optimize out top-level call, heh
+          if (curframe !is origcf && (*cptr).opCode == Op.ret) {
+            import core.stdc.string : memcpy;
+            // yay, it is a tail call!
+            // copy arguments (it's safe to use `memcpy()` here); `self` and `other` are automatically ok
+            if (opx.opOp1) memcpy(bp+Slot.Argument0, bp+opx.opOp0+Slot.Argument0, Real.sizeof*opx.opOp1);
+            // simply replace current frame with new one
+          } else {
+            bp[opx.opOp0..opx.opOp0+Slot.Argument0] = bp[0..Slot.Argument0]; // copy `self` and `other`
+            curframe.pc = cast(uint)(cptr-code.ptr);
+            curframe.rval = opx.opDest;
+            ++curframe;
+            curframe.bp = curframe[-1].bp+opx.opOp0;
+            bp = &stack[curframe.bp];
+          }
           curframe.script = sid;
-          bp = &stack[curframe.bp];
           cptr = code.ptr+scriptPCs.ptr[sid];
           //assert((*cptr).opCode == Op.enter);
+          // clear unused arguments
           if (opx.opOp1 < 16) bp[Slot.Argument0+opx.opOp1..Slot.Argument15+1] = 0;
           break;
-
-        //tcall, // same as call, but does tail call
 
         case Op.enter: // op0: number of stack slots used (including result and args); op1: number of locals
           if (curframe.bp+opx.opOp0 > stack.length) {
@@ -1080,7 +1076,6 @@ static:
       Op.xfalse: Dest,
 
       Op.call: DestCall,
-      //Op.tcall: DestCall,
 
       Op.enter: Op0Op1,
 
