@@ -5,7 +5,8 @@ import std.stdio : File;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-alias Real = float;
+//alias Real = float;
+alias Real = double;
 
 
 // value manipulation
@@ -35,7 +36,7 @@ static int getStrId (Real v) {
   import std.math;
   if (isNaN(v)) {
     auto res = getNaNPayload(v);
-    static if (is(Real == float)) {
+    static if (Real.sizeof == 4) {
       return (res < 0 ? 0 : cast(int)res);
     } else {
       return (res < 0 || res > int.max ? 0 : cast(int)res);
@@ -47,7 +48,7 @@ static int getStrId (Real v) {
 
 Real buildStrId (int id) {
   import std.math;
-  static if (is(Real == float)) {
+  static if (Real.sizeof == 4) {
     assert(id >= 0 && id <= 0x3F_FFFF);
   } else {
     assert(id >= 0);
@@ -149,7 +150,9 @@ public:
 private:
   uint[] code; // [0] is reserved
   uint[string] scripts; // name -> number
+  string[uint] scriptNum2Name;
   uint[] scriptPCs; // by number; 0 is reserved
+  NodeFunc[] scriptASTs; // by number
   // fixuper will not remove fixup chains, so we can replace script with new one
   Real[] vpool; // pool of values
   string[] spool; // pool of strings
@@ -161,6 +164,7 @@ public:
   this () {
     code.length = 1;
     scriptPCs.length = 1;
+    scriptASTs.length = 1;
     // preallocate small strings
     spool ~= null;
     foreach (ubyte c; 0..256) spool ~= ""~cast(char)c;
@@ -236,6 +240,37 @@ private:
 
   void doCompileFunc (NodeFunc fn) {
 
+    void compileError(A...) (Loc loc, A args) {
+      if (fn.pp !is null) {
+        fn.pp.error(loc, args);
+      } else {
+        import std.stdio : stderr;
+        stderr.writeln("ERROR at ", loc, ": ", args);
+        string msg;
+        foreach (immutable a; args) {
+          import std.string : format;
+          msg ~= "%s".format(a);
+        }
+        throw new ErrorAt(loc, msg);
+      }
+    }
+
+    uint sid4name (string name) {
+      if (auto sptr = name in scripts) {
+        return *sptr;
+      } else {
+        auto sid = cast(uint)scriptPCs.length;
+        if (sid > 32767) compileError(fn.loc, "too many scripts");
+        assert(scriptASTs.length == sid);
+        // reserve slots
+        scriptPCs ~= 0;
+        scriptASTs ~= null;
+        scriptNum2Name[sid] = name;
+        scripts[name] = sid;
+        return sid;
+      }
+    }
+
     uint pc () { return cast(uint)code.length; }
 
     uint emit (Op op, ubyte dest=0, ubyte op0=0, ubyte op1=0) {
@@ -285,21 +320,6 @@ private:
     assert(fn !is null);
     assert(fn.ebody !is null);
     assert(fn.name.length);
-
-    void compileError(A...) (Loc loc, A args) {
-      if (fn.pp !is null) {
-        fn.pp.error(loc, args);
-      } else {
-        import std.stdio : stderr;
-        stderr.writeln("ERROR at ", loc, ": ", args);
-        string msg;
-        foreach (immutable a; args) {
-          import std.string : format;
-          msg ~= "%s".format(a);
-        }
-        throw new ErrorAt(loc, msg);
-      }
-    }
 
     bool[256] slots;
     foreach (immutable idx; 0..Slot.max+1) slots[idx] = true; // used
@@ -437,6 +457,12 @@ private:
       return -1;
     }
 
+    // options for expression
+    static struct EOpts {
+      int ddest = -1; // >=0: put result in this slot
+      bool dna; // use `ddest` only if we don't need to allocate more slots
+    }
+
     // returns dest slot
     // can put value in desired dest
     ubyte compileExpr (Node nn, int ddest=-1, bool wantref=false) {
@@ -458,6 +484,8 @@ private:
         return dest;
       }
 
+      nn.pcs = pc;
+      scope(exit) nn.pce = pc;
       return selectNode!ubyte(nn,
         (NodeLiteralNum n) {
           auto dest = allocSlot(n.loc, ddest);
@@ -511,40 +539,32 @@ private:
         (NodeBinaryLogAnd n) => doBinOp(Op.land, n),
         (NodeBinaryLogXor n) => doBinOp(Op.lxor, n),
         (NodeFCall n) {
-          auto dest = allocSlot(n.loc, ddest);
           if (cast(NodeId)n.fe is null) compileError(n.loc, "invalid function call");
-          ubyte[16] slt;
           if (n.args.length > 16) compileError(n.loc, "too many arguments in function call");
-          foreach (immutable idx, Node a; n.args) slt[idx] = compileExpr(a);
-          auto fcs = reserveCallSlots(n.loc, cast(uint)n.args.length+Slot.Argument0+1);
-          /*
-          foreach (immutable idx; 0..n.args.length) {
-            emit(Op.copy, cast(ubyte)(fcs+Slot.Argument0+idx), slt[idx], 1); //TODO: optimize
+          auto dest = allocSlot(n.loc, ddest);
+          // preallocate frame
+          // we can do this, as current slot allocation scheme guarantees
+          // that we won't have used slots with higher numbert after compiling
+          // argument expressions
+          // `reserveCallSlots()` won't mark slots as used
+          auto frameSize = cast(uint)n.args.length+Slot.Argument0;
+          auto fcs = reserveCallSlots(n.loc, frameSize+1); // +1 for script id
+          // put arguments where we want 'em to be
+          foreach (immutable idx, Node a; n.args) {
+            // reserve result slot, so it won't be overwritten
+            assert(!slots[fcs+Slot.Argument0+idx]);
+            slots[fcs+Slot.Argument0+idx] = true;
+            auto dp = compileExpr(a, fcs+Slot.Argument0+idx);
+            if (dp != fcs+Slot.Argument0+idx) assert(0, "internal compiler error");
           }
-          */
-          {
-            uint sidx = 0;
-            while (sidx < n.args.length) {
-              uint eidx = sidx+1;
-              while (eidx < n.args.length && slt[eidx] == slt[eidx-1]+1) ++eidx;
-              emit(Op.copy, cast(ubyte)(fcs+Slot.Argument0+sidx), slt[sidx], cast(ubyte)(eidx-sidx));
-              sidx = eidx;
-            }
-          }
-          foreach (immutable idx, Node a; n.args) freeSlot(slt[idx]);
+          // now free result slots
+          foreach (immutable idx; 0..n.args.length) freeSlot(cast(ubyte)(fcs+Slot.Argument0+idx));
+          // make sure that our invariant holds
+          if (reserveCallSlots(n.loc, 1) != fcs) assert(0, "internal compiler error");
           // put script id
-          if (auto aptr = (cast(NodeId)n.fe).name in scripts) {
-            // known script
-            emit2Bytes(Op.xlit, cast(ubyte)(fcs+Slot.Argument0+n.args.length), cast(short)(*aptr));
-          } else {
-            auto snum = cast(uint)scriptPCs.length;
-            if (snum > 32767) compileError(n.loc, "too many scripts");
-            scriptPCs ~= 0;
-            scripts[(cast(NodeId)n.fe).name] = snum;
-            // unknown script
-            emit2Bytes(Op.xlit, cast(ubyte)(fcs+Slot.Argument0+n.args.length), cast(short)snum);
-          }
           // emit call
+          uint sid = sid4name((cast(NodeId)n.fe).name);
+          emit2Bytes(Op.xlit, cast(ubyte)(fcs+Slot.Argument0+n.args.length), cast(short)sid);
           emit(Op.call, dest, fcs, cast(ubyte)n.args.length);
           return dest;
         },
@@ -582,6 +602,8 @@ private:
 
     void compile (Node nn) {
       assert(nn !is null);
+      nn.pcs = pc;
+      scope(exit) nn.pce = pc;
       return selectNode!void(nn,
         (NodeVarDecl n) {},
         (NodeBlock n) {
@@ -659,19 +681,17 @@ private:
       );
     }
 
+    uint sid = sid4name(fn.name);
+    //{ import std.stdio; writeln("compiling '", fn.name, "' (", sid, ")..."); }
     auto startpc = emit(Op.enter);
+    fn.pcs = pc;
     compile(fn.ebody);
     emit(Op.ret);
+    fn.pce = pc;
     // patch enter
     code[startpc] = (locals.length<<24)|((maxUsedSlot+1)<<16)|cast(ubyte)Op.enter;
-    if (auto sid = fn.name in scripts) {
-      scriptPCs[*sid] = startpc;
-    } else {
-      auto snum = cast(uint)scriptPCs.length;
-      if (snum > 32767) compileError(fn.loc, "too many scripts");
-      scriptPCs ~= startpc;
-      scripts[fn.name] = snum;
-    }
+    scriptPCs[sid] = startpc;
+    scriptASTs[sid] = fn;
   }
 
 private:
@@ -690,6 +710,16 @@ private:
     import std.stdio : stderr;
     stderr.writef("ERROR at %08X: ", pc);
     stderr.writeln(args);
+    // try to build stack trace
+    if (curframe !is null) {
+      curframe.pc = pc;
+      auto cf = curframe;
+      for (;;) {
+        stderr.writefln("%08X: %s", cf.pc, scriptNum2Name[cf.script]);
+        if (cf is frames.ptr) break; // it's not legal to compare pointers from different regions
+        --cf;
+      }
+    }
     throw new Exception("fuuuuu");
   }
 
@@ -772,8 +802,10 @@ private:
 
     static if (is(Real == float)) {
       import core.stdc.math : lrint = lrintf;
-    } else {
+    } else static if (is(Real == double)) {
       import core.stdc.math : lrint;
+    } else {
+      static assert(0, "wtf?!");
     }
     assert(curframe !is null);
     assert(pc > 0 && pc < code.length);
@@ -917,6 +949,7 @@ private:
           }
           debug(vm_exec) {
             import std.stdio : stderr;
+            /*
             foreach (auto kv; scripts.byKeyValue) {
               if (kv.value == sid) {
                 stderr.writeln("calling '", kv.key, "'");
@@ -925,6 +958,9 @@ private:
                 }
               }
             }
+            */
+            stderr.writeln("calling '", scriptNum2Name[sid], "'");
+            foreach (immutable aidx; 0..opx.opOp1) stderr.writeln("  ", bp[opx.opOp0+Slot.Argument0+aidx]);
           }
           bp[opx.opOp0+Slot.Argument0+opx.opOp1] = 0; // just in case
           bp[opx.opOp0..opx.opOp0+Slot.Argument0] = bp[0..Slot.Argument0]; // copy `self` and `other`

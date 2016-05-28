@@ -22,10 +22,16 @@ NodeFunc[] loadScript (string filename, bool warnings=true) {
   bool asGmx = (filename.extension == ".gmx");
   try {
     if (asGmx) {
-      while (!parser.lex.empty) res ~= parser.parseFunction();
+      while (!parser.lex.empty) {
+        auto fn = parser.parseFunction();
+        fn.pp = parser; // store parsed source
+        res ~= fn;
+      }
     } else {
       string scname = filename.baseName(".gml");
-      res ~= parser.parseFunctionBody(scname);
+      auto fn = parser.parseFunctionBody(scname);
+      fn.pp = parser; // store parsed source
+      res ~= fn;
     }
     assert(parser.lex.empty);
   } catch (ErrorAt e) {
@@ -47,7 +53,8 @@ NodeFunc parseScript (string code, string scname, bool warnings=true) {
   auto parser = new Parser(code, scname);
   parser.warnings = warnings;
   try {
-    return parser.parseFunctionBody(scname);
+    auto fn = parser.parseFunctionBody(scname);
+    fn.pp = parser; // store parsed source
   } catch (ErrorAt e) {
     import std.stdio;
     writeln("ERROR at ", e.loc, ": ", e.msg);

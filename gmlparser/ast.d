@@ -32,6 +32,7 @@ abstract class Node {
 
   Loc loc;
   bool textual; // used for unary and binary nodes where, for example, "and" is used instead of "&&"
+  uint pcs, pce; // for codegen: first and last compiled instruction; pce points after last instr
 
   this () {}
   this (Node n) { if (n !is null) loc = n.loc; }
