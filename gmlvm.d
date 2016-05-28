@@ -542,6 +542,7 @@ private:
           } else {
             auto vsl = varSlot(n.name);
             assert(vsl >= 0);
+            if (ddest < 0) return vsl; // just use this slot directly
             auto dest = allocSlot(n.loc, ddest);
             if (dest == vsl) return dest;
             emit(Op.copy, dest, cast(ubyte)vsl, 1);
