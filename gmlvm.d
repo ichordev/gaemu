@@ -237,6 +237,28 @@ private:
 
 
   void doCompileFunc (NodeFunc fn) {
+    int argvar (string s) {
+      switch (s) {
+        case "argument0": return 0;
+        case "argument1": return 1;
+        case "argument2": return 2;
+        case "argument3": return 3;
+        case "argument4": return 4;
+        case "argument5": return 5;
+        case "argument6": return 6;
+        case "argument7": return 7;
+        case "argument8": return 8;
+        case "argument9": return 9;
+        case "argument10": return 10;
+        case "argument11": return 11;
+        case "argument12": return 12;
+        case "argument13": return 13;
+        case "argument14": return 14;
+        case "argument15": return 15;
+        default:
+      }
+      return -1;
+    }
 
     void compileError(A...) (Loc loc, A args) {
       if (fn.pp !is null) {
@@ -384,6 +406,80 @@ private:
       return VisitRes.Continue;
     });
 
+    /* here we will do very simple analysis for code like
+     *   var m, n;
+     *   m = argument0;
+     *   n = argument1;
+     *   ...no `arument0` and `argument1` usage after this point
+     * we can just alias `m` to `arument0`, and `n` to `argument1` then
+     */
+
+    string[16] aaliases; // argument aliases
+    {
+      uint firstBadStatement = 0;
+      foreach (immutable idx, Node st; fn.ebody.stats) {
+        if (cast(NodeStatementEmpty)st || cast(NodeStatementExpr)st || cast(NodeVarDecl)st) {
+          firstBadStatement = cast(uint)idx+1;
+        } else {
+          break;
+        }
+      }
+      if (firstBadStatement > 0) {
+        bool[string] varsused;
+        // scan statements, find assignments
+        foreach (immutable idx, Node st; fn.ebody.stats[0..firstBadStatement]) {
+          if (auto se = cast(NodeStatementExpr)st) {
+            if (auto ass = cast(NodeBinaryAss)se.e) {
+              // wow, assignment
+              auto lv = cast(NodeId)ass.el;
+              auto rv = cast(NodeId)ass.er;
+              if (lv !is null && rv !is null) {
+                // "a = b"
+                { import std.stdio : stderr; stderr.writeln("found assignment: '", lv.name, "' = '", rv.name, "'"); }
+                if (argvar(rv.name) >= 0 && argvar(lv.name) < 0) {
+                  // "a = argumentx"
+                  if (lv.name in varsused || rv.name in varsused) continue; // no wai
+                  if (lv.name !in locals) continue; // not a local
+                  auto ai = argvar(rv.name);
+                  if (aaliases[ai].length && aaliases[ai] != lv.name) continue; // already have an alias (TODO)
+                  aaliases[ai] = lv.name; // possible alias
+                } else {
+                  // check for reassignment
+                  if (lv.name !in varsused) {
+                    // not used before, but used now; remove it from aliases
+                    foreach (ref an; aaliases) if (an == lv.name) an = null;
+                    varsused[lv.name] = true;
+                  }
+                }
+              }
+            }
+          }
+        }
+        // now check if we have any assignment to aliased argument
+        foreach (immutable idx, string an; aaliases) {
+          if (an.length == 0) continue;
+          visitNodes(fn.ebody, (Node n) {
+            if (auto ass = cast(NodeBinaryAss)n) {
+              if (auto id = cast(NodeId)ass.el) {
+                auto ai = argvar(id.name);
+                if (ai >= 0) aaliases[idx] = null;
+                return VisitRes.Stop;
+              }
+            }
+            return VisitRes.Continue;
+          });
+        }
+        // TODO: remove aliases from locals (we don't need slots for 'em)
+        // dump aliases
+        {
+          import std.stdio : stderr;
+          foreach (immutable idx, string an; aaliases) {
+            if (an.length) stderr.writeln("'argument", idx, "' is aliased to '", an, "'");
+          }
+        }
+      }
+    }
+
     void emitPLit (Loc loc, ubyte dest, Real v) {
       uint vpidx = uint.max;
       if (isReal(v)) {
@@ -430,27 +526,16 @@ private:
     }
 
     int varSlot (string name) {
+      auto avn = argvar(name);
+      if (avn >= 0) return Slot.Argument0+avn;
       switch (name) {
-        case "argument0": return Slot.Argument0+0;
-        case "argument1": return Slot.Argument0+1;
-        case "argument2": return Slot.Argument0+2;
-        case "argument3": return Slot.Argument0+3;
-        case "argument4": return Slot.Argument0+4;
-        case "argument5": return Slot.Argument0+5;
-        case "argument6": return Slot.Argument0+6;
-        case "argument7": return Slot.Argument0+7;
-        case "argument8": return Slot.Argument0+8;
-        case "argument9": return Slot.Argument0+9;
-        case "argument10": return Slot.Argument0+10;
-        case "argument11": return Slot.Argument0+11;
-        case "argument12": return Slot.Argument0+12;
-        case "argument13": return Slot.Argument0+13;
-        case "argument14": return Slot.Argument0+14;
-        case "argument15": return Slot.Argument0+15;
         case "self": return Slot.Self;
         case "other": return Slot.Other;
         default:
       }
+      // argument aliases
+      foreach (immutable idx, string an; aaliases) if (an == name) return cast(int)Slot.Argument0+idx;
+      // locals
       if (auto v = name in locals) return *v;
       return -1;
     }
