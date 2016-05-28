@@ -301,12 +301,29 @@ private:
     bool[256] slots;
     foreach (immutable idx; 0..Slot.max+1) slots[idx] = true; // used
     uint firstFreeSlot = Slot.max+1;
+    uint maxUsedSlot = firstFreeSlot-1;
 
-    ubyte allocSlot (Loc loc) {
+    ubyte allocSlot (Loc loc, int ddest=-1) {
+      if (ddest >= 0) {
+        assert(ddest < slots.length);
+        return cast(ubyte)ddest;
+      }
       foreach (immutable idx; firstFreeSlot..slots.length) {
         if (!slots[idx]) {
+          if (idx > maxUsedSlot) maxUsedSlot = cast(uint)idx;
           slots[idx] = true;
           return cast(ubyte)idx;
+        }
+      }
+      compileError(loc, "out of free slots");
+      assert(0);
+    }
+
+    ubyte reserveCallSlots (Loc loc, uint resnum) {
+      foreach_reverse (immutable idx, bool v; slots) {
+        if (v) {
+          if (idx+resnum+1 > slots.length) compileError(loc, "out of free slots");
+          return cast(ubyte)(idx+1);
         }
       }
       compileError(loc, "out of free slots");
@@ -355,9 +372,10 @@ private:
     }
 
     // returns dest slot
-    ubyte compileExpr (Node nn, bool wantref=false) {
+    // can put value in desired dest
+    ubyte compileExpr (Node nn, int ddest=-1, bool wantref=false) {
       ubyte doBinOp (Op op, NodeBinary n) {
-        auto dest = allocSlot(n.loc);
+        auto dest = allocSlot(n.loc, ddest);
         auto o0 = compileExpr(n.el);
         auto o1 = compileExpr(n.er);
         emit(op, dest, o0, o1);
@@ -367,7 +385,7 @@ private:
       }
 
       ubyte doUnOp (Op op, NodeUnary n) {
-        auto dest = allocSlot(n.loc);
+        auto dest = allocSlot(n.loc, ddest);
         auto o0 = compileExpr(n.e);
         emit(op, dest, o0);
         freeSlot(o0);
@@ -376,16 +394,16 @@ private:
 
       return selectNode!ubyte(nn,
         (NodeLiteralNum n) {
-          auto dest = allocSlot(n.loc);
+          auto dest = allocSlot(n.loc, ddest);
           emit2Bytes(Op.plit, dest, allocNumConst(n.val));
           return dest;
         },
         (NodeLiteralStr n) {
-          auto dest = allocSlot(n.loc);
+          auto dest = allocSlot(n.loc, ddest);
           emit2Bytes(Op.plit, dest, allocStrConst(n.val));
           return dest;
         },
-        (NodeUnaryParens n) => compileExpr(n.e),
+        (NodeUnaryParens n) => compileExpr(n.e, ddest, wantref),
         (NodeUnaryNot n) => doUnOp(Op.lnot, n),
         (NodeUnaryNeg n) => doUnOp(Op.neg, n),
         (NodeUnaryBitNeg n) => doUnOp(Op.bneg, n),
@@ -395,7 +413,8 @@ private:
           auto dest = compileExpr(n.el, true);
           emit(Op.rstore, dest, src);
           freeSlot(src);
-          return dest;
+          freeSlot(dest);
+          return 0;
         },
         (NodeBinaryAdd n) => doBinOp(Op.add, n),
         (NodeBinarySub n) => doBinOp(Op.sub, n),
@@ -418,11 +437,34 @@ private:
         (NodeBinaryLogAnd n) => doBinOp(Op.land, n),
         (NodeBinaryLogXor n) => doBinOp(Op.lxor, n),
         (NodeFCall n) {
+          auto dest = allocSlot(n.loc, ddest);
+          if (auto id = cast(NodeId)n.fe) {
+          } else {
+            compileError(n.loc, "invalid function call");
+          }
+          ubyte[16] slt;
+          if (n.args.length > 16) compileError(n.loc, "too many arguments in function call");
+          foreach (immutable idx, Node a; n.args) slt[idx] = compileExpr(a);
+          auto fcs = reserveCallSlots(n.loc, cast(uint)n.args.length+Slot.Argument0+1);
           /*
-          if (auto r = visitNodes(n.fe, dg)) return r;
-          foreach (immutable idx, Node a; n.args) if (auto r = visitNodes(a, dg)) return r;
-          return null;
+          foreach (immutable idx; 0..n.args.length) {
+            emit(Op.copy, cast(ubyte)(fcs+Slot.Argument0+idx), slt[idx], 1); //TODO: optimize
+          }
           */
+          {
+            uint sidx = 0;
+            while (sidx < n.args.length) {
+              uint eidx = sidx+1;
+              while (eidx < n.args.length && slt[eidx] == slt[eidx-1]+1) ++eidx;
+              emit(Op.copy, cast(ubyte)(fcs+Slot.Argument0+sidx), slt[sidx], cast(ubyte)(eidx-sidx));
+              sidx = eidx;
+            }
+          }
+          foreach (immutable idx, Node a; n.args) freeSlot(slt[idx]);
+          // put script id
+          // emit call
+          emit(Op.call, dest, fcs, cast(ubyte)n.args.length);
+          return dest;
         },
         (NodeId n) {
           switch (n.name) {
@@ -538,7 +580,11 @@ private:
       );
     }
 
+    auto startpc = emit(Op.enter);
     compile(fn.ebody);
+    emit(Op.ret);
+    // patch enter
+    code[startpc] = (maxUsedSlot<<8)|cast(ubyte)Op.enter;
   }
 
 static:
