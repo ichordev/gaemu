@@ -685,6 +685,7 @@ private:
     if (stack.length < 65536) stack.length = 65536;
     curframe = &frames[0];
     curframe.bp = 0;
+    curframe.script = sid;
     stack[0..Slot.max+1] = 0;
     foreach (immutable idx, immutable a; args) {
       static if (is(typeof(a) : const(char)[])) {
@@ -886,6 +887,13 @@ private:
               //   int scriptid (after op1+3 slots)
               // note that there should be no used registers after those (as that will be used as new function frame regs)
           auto sid = *cast(uint*)(bp+opx.opOp0+Slot.Argument0+opx.opOp1);
+          if (sid >= scriptPCs.length) runtimeError(cast(uint)(cptr-code.ptr-1), "invalid script id");
+          pc = scriptPCs.ptr[sid];
+          if (pc < 1 || pc >= code.length) {
+            string scname;
+            foreach (auto kv; scripts.byKeyValue) if (kv.value == sid) { scname = kv.key; break; }
+            runtimeError(cast(uint)(cptr-code.ptr-1), "trying to execute undefined script '", scname, "'");
+          }
           debug(vm_exec) {
             import std.stdio : stderr;
             foreach (auto kv; scripts.byKeyValue) {
@@ -905,7 +913,7 @@ private:
           curframe.bp = curframe[-1].bp+opx.opOp0;
           curframe.script = sid;
           bp = &stack[curframe.bp];
-          cptr = code.ptr+scriptPCs[sid];
+          cptr = code.ptr+scriptPCs.ptr[sid];
           //assert((*cptr).opCode == Op.enter);
           if (opx.opOp1 < 16) bp[Slot.Argument0+opx.opOp1..Slot.Argument15+1] = 0;
           break;
