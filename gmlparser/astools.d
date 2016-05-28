@@ -112,6 +112,7 @@ Node visitNodes (Node nn, VisitRes delegate (Node n) dg) {
   return res;
 }
 
+
 // ////////////////////////////////////////////////////////////////////////// //
 bool isEmpty (Node nn) {
   if (nn is null) return true;
@@ -172,4 +173,147 @@ bool hasReturn (Node nn) {
       () { assert(0, "unimplemented node: "~typeid(nn).name); },
     );
   }
+}
+
+
+// ////////////////////////////////////////////////////////////////////////// //
+//x > view_xview[0]-16 && x < view_xview[0]+view_wview[0]+16 &&
+//y > view_yview[0]-16 && y < view_yview[0]+view_hview[0]+16
+struct FCInfo {
+  Node n;
+  bool isNotFrozen;
+}
+
+void findFrozenChecks (ref Node[] cn, Node nn) {
+  import std.stdio;
+  import std.string : replace;
+
+  static bool isViewAccess (Node nn, char what) {
+    if (auto n = cast(NodeIndex)nn) {
+      // has second index?
+      if (n.ei1 !is null) return false;
+      // id
+      if (auto id = cast(NodeId)n.e) {
+        if (id.name.length != 10) return false;
+        if (id.name.ptr[5] != what) return false;
+        if (id.name[0..5] != "view_") return false;
+        if (id.name[6..$] != "view") return false;
+      } else {
+        return false;
+      }
+      // [0]
+      if (auto l = cast(NodeLiteralNum)n.ei0) {
+        if (l.val != 0) return false;
+      } else {
+        return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  static bool isXYStartExpr (Node nn, char what) {
+    if (auto n = cast(NodeBinary)nn) {
+      if (!isViewAccess(n.el, what)) return false;
+      if (cast(NodeBinaryAdd)nn is null && cast(NodeBinarySub)nn is null) return false;
+      if (cast(NodeLiteralNum)n.er is null) return false;
+      return true;
+    } else if (isViewAccess(nn, what)) {
+      return true;
+    }
+    return false;
+  }
+
+  static bool isXYEndExpr (Node nn, char what) {
+    if (auto n = cast(NodeBinary)nn) {
+      //TODO: check for "+"
+      if (isViewAccess(n.el, (what == 'w' ? 'x' : 'y')) && isViewAccess(n.er, what)) return true;
+    }
+    if (auto n = cast(NodeBinaryAdd)nn) {
+      //writeln("x00(", what, "): ", nn.toString.replace("\n", " "), " : ", typeid(n.el).name);
+      //writeln("x01(", what, "): ", n.el.toString.replace("\n", " "), " : ", typeid(n.el).name);
+      if (cast(NodeBinaryAdd)n.el is null && cast(NodeBinarySub)n.el is null) return false;
+      //writeln("x02(", what, "): ", n.el.toString.replace("\n", " "), " : ", typeid(n.el).name);
+      auto x = cast(NodeBinary)n.el;
+      assert(x !is null);
+      if (!isViewAccess(x.el, (what == 'w' ? 'x' : 'y'))) return false;
+      //writeln("x03(", what, "): ", n.el.toString.replace("\n", " "), " : ", typeid(n.el).name);
+      if (!isViewAccess(x.er, what)) return false;
+      //writeln("x04(", what, "): ", n.el.toString.replace("\n", " "), " : ", typeid(n.el).name);
+      return true;
+    }
+    return false;
+  }
+
+  static bool isCompare(alias exprcheck) (Node nn, char what) {
+    if (auto n = cast(NodeBinaryCmp)nn) {
+      if (auto id = cast(NodeId)n.el) {
+        if (id.name != "x" && id.name != "y") return false;
+        //writeln("cmp(", what, "): ", n.er.toString.replace("\n", " "));
+        return exprcheck(n.er, what);
+      } else if (auto id = cast(NodeId)n.er) {
+        if (id.name != "x" && id.name != "y") return false;
+        return exprcheck(n.el, what);
+      }
+    }
+    return false;
+  }
+
+  static bool isFrozenExpr3 (Node nn) {
+    if (auto a3 = cast(NodeBinaryLogAnd)nn) {
+      //writeln("fe3: ", nn.toString.replace("\n", " "));
+      //writeln("fe3.l: ", a3.el.toString.replace("\n", " "));
+      //writeln("fe3.r: ", a3.er.toString.replace("\n", " "));
+      //writeln("     : ", isCompare!isXYStartExpr(a3.el, 'x'));
+      //writeln("     : ", isCompare!isXYEndExpr(a3.er, 'w'));
+      return
+        isCompare!isXYStartExpr(a3.el, 'x') &&
+        isCompare!isXYEndExpr(a3.er, 'w');
+    }
+    return false;
+  }
+
+  static bool isFrozenExpr2 (Node nn) {
+    if (auto a2 = cast(NodeBinaryLogAnd)nn) {
+      //writeln("fe2: ", nn.toString.replace("\n", " "));
+      //writeln("fe2.l: ", a2.el.toString.replace("\n", " "));
+      //writeln("fe2.r: ", a2.er.toString.replace("\n", " "));
+      //writeln("     : ", isCompare!isXYStartExpr(a2.er, 'y'));
+      return
+        isFrozenExpr3(a2.el) &&
+        isCompare!isXYStartExpr(a2.er, 'y');
+    }
+    return false;
+  }
+
+  static bool isFrozenExpr1 (Node nn) {
+    if (auto a1 = cast(NodeBinaryLogAnd)nn) {
+      //writeln("fe1: ", nn.toString.replace("\n", " "));
+      //writeln("fe1.l: ", a1.el.toString.replace("\n", " "));
+      //writeln("fe1.r: ", a1.er.toString.replace("\n", " "));
+      //writeln("     : ", isCompare!isXYEndExpr(a1.er, 'y'));
+      return
+        isFrozenExpr2(a1.el) &&
+        isCompare!isXYEndExpr(a1.er, 'h');
+    }
+    return false;
+  }
+
+  bool isFrozenExpr (Node nn) {
+    auto res = visitNodes(nn, (n) {
+      if (isFrozenExpr1(n)) return VisitRes.Stop;
+      if (auto id = cast(NodeId)n) {
+        if (id.name == "isNotFrozen") return VisitRes.Stop;
+      }
+      return VisitRes.Continue;
+    });
+    return (res !is null);
+  }
+
+  visitNodes(nn, (nn) {
+    if (auto n = cast(NodeIf)nn) {
+      if (isFrozenExpr(n.ec)) cn ~= n;
+    }
+    return VisitRes.Continue;
+  });
 }

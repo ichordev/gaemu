@@ -23,25 +23,46 @@ import gmlparser.tokens;
 
 
 final class Parser {
-  bool strict = false;
-  bool warnings = false;
-  bool showCaret = true;
-
   Lexer lex;
   Node curbreak, curcont; // current nodes for `break` and `continue`
+  bool showCaret = true;
+  bool warnings = true;
 
-  this (Lexer alex, bool astrict=false) {
+  this (Lexer alex) {
     lex = alex;
-    strict = astrict;
   }
 
-  this(T) (const(char)[] atext, T afname, bool astrict=false) if (is(T : const(char)[])) {
+  this(T) (const(char)[] atext, T afname) if (is(T : const(char)[])) {
     lex = new Lexer(atext, afname);
-    strict = astrict;
   }
 
-  static void errorAt (Loc loc, string msg, string file=__FILE__, usize line=__LINE__) {
-    throw new ErrorAt(loc, msg, null, file, line);
+  // ////////////////////////////////////////////////////////////////////// //
+  private import std.stdio : File, stdout;
+
+  void printCaret (Loc loc, File ofile=stdout) {
+    auto line = lex.line(loc.line);
+    if (line.length == 0) return;
+    ofile.writeln(line);
+    foreach (immutable _; 1..loc.col) ofile.write(' ');
+    ofile.writeln('^');
+  }
+
+  void warning(A...) (Loc loc, A args) {
+    import std.stdio : stderr;
+    stderr.writeln("WARNING at ", loc, ": ", args);
+    if (showCaret) printCaret(loc, stderr);
+  }
+
+  void error(A...) (Loc loc, A args) {
+    import std.stdio : stderr;
+    stderr.writeln("ERROR at ", loc, ": ", args);
+    if (showCaret) printCaret(loc, stderr);
+    string msg;
+    foreach (immutable a; args) {
+      import std.string : format;
+      msg ~= "%s".format(a);
+    }
+    throw new ErrorAt(loc, msg);
   }
 
   // ////////////////////////////////////////////////////////////////////// //
@@ -53,9 +74,8 @@ final class Parser {
       foreach (immutable idx, auto _; T) {
         static if (idx%2 == 0) {
           if (lex == T[idx]) {
-            static if (T[idx] == Keyword.Ass) {
+            static if (T[idx] == Keyword.Ass || T[idx] == Keyword.Equ) {
               if (stopOnAss) break mainloop;
-              warning(lex.loc, "'=' instead of '=='");
             }
             auto loc = lex.loc;
             lex.popFront();
@@ -121,7 +141,7 @@ final class Parser {
     // "(...)"
     if (lex.eatKw(Keyword.LParen)) {
       auto res = parseExpr();
-      if (lex != Keyword.RParen) errorAt(lex.loc, "`)` expected for `(` at "~loc.toStringNoFile);
+      if (lex != Keyword.RParen) error(lex.loc, "`)` expected for `(` at ", loc.toStringNoFile);
       lex.expect(Keyword.RParen);
       return new NodeUnaryParens(loc, res);
     }
@@ -137,12 +157,12 @@ final class Parser {
     if (lex.eatKw(Keyword.Pi)) { import std.math : PI; return new NodeLiteralNum(loc, PI); }
 
     // global scope
-    if (lex.eatKw(Keyword.Dot)) errorAt(loc, "no global scope access is supported yet");
+    if (lex.eatKw(Keyword.Dot)) error(loc, "no global scope access is supported yet");
 
-    if (lex.isKw(Keyword.PlusPlus)) errorAt(loc, "GML doesn't have '++'");
-    if (lex.isKw(Keyword.MinusMinus)) errorAt(loc, "GML doesn't have '--'");
+    if (lex.isKw(Keyword.PlusPlus)) error(loc, "GML doesn't have '++'");
+    if (lex.isKw(Keyword.MinusMinus)) error(loc, "GML doesn't have '--'");
 
-    errorAt(loc, "primary expression expected");
+    error(loc, "primary expression expected");
     assert(0);
   }
 
@@ -216,46 +236,22 @@ final class Parser {
   }
 
   // ////////////////////////////////////////////////////////////////////// //
-  private import std.stdio : File, stdout;
-
-  void printCaret (Loc loc, File ofile=stdout) {
-    auto line = lex.line(loc.line);
-    if (line.length == 0) return;
-    ofile.writeln(line);
-    foreach (immutable _; 1..loc.col) ofile.write(' ');
-    ofile.writeln('^');
-  }
-
-  void warning(A...) (Loc loc, A args) {
-    if (warnings) {
-      import std.stdio : stderr;
-      stderr.writeln("WARNING at ", loc, ": ", args);
-      if (showCaret) printCaret(loc, stderr);
-    }
-  }
-
   void endOfStatement () {
     if (!lex.eatKw(Keyword.Semi)) {
-      if (strict) {
-        lex.expect(Keyword.Semi);
-      } else {
-        warning(lex.peloc, "';' missing");
-      }
+      warning(lex.peloc, "';' missing");
+    } else {
+      if (lex.isKw(Keyword.Semi)) warning(lex.loc, "extra ';'");
+      while (lex.eatKw(Keyword.Semi)) {}
     }
   }
 
   Node exprInParens () {
-    if (strict) {
-      lex.expect(Keyword.LParen);
-      auto ec = parseExpr();
-      lex.expect(Keyword.RParen);
-      return ec;
-    } else {
-      if (!lex.isKw(Keyword.LParen)) warning(lex.loc, "'(' missing");
-      return parseExpr();
-    }
+    auto ec = parseExpr();
+    if (cast(NodeUnaryParens)ec is null) warning(ec.loc, "'(' missing");
+    return ec;
   }
 
+  // ////////////////////////////////////////////////////////////////////// //
   // higher-level parsers
   // can create new block
   NodeStatement parseCodeBlock () {
@@ -289,15 +285,6 @@ final class Parser {
     lex.expect(Keyword.If);
     auto ec = exprInParens();
     auto et = parseStatement();
-    if (!strict && lex.isKw(Keyword.Semi)) {
-      int pos = 1;
-      while (lex.peek(pos).isKw(Keyword.Semi)) ++pos;
-      if (lex.peek(pos).isKw(Keyword.Else)) {
-        if (strict) throw new ErrorAt(lex.peek(pos-1).loc, "unexpected ';'");
-        warning(lex.loc, "extra ';'");
-        while (lex.eatKw(Keyword.Semi)) {}
-      }
-    }
     auto ef = (lex.eatKw(Keyword.Else) ? parseStatement() : null);
     return new NodeIf(loc, ec, et, ef);
   }
@@ -361,14 +348,13 @@ final class Parser {
     } else {
       lex.expect(Keyword.Var);
     }
-    if (!lex.isId) lex.error("identifier expected");
+    if (!lex.isId) error(lex.loc, "identifier expected");
     auto vd = new NodeVarDecl(loc);
     vd.asGlobal = gvar;
     while (lex.isId) {
-      //if (vd.hasVar(lex.front.tstr)) lex.error("duplicate variable name '"~lex.front.istr~"'");
       vd.locs ~= lex.loc;
       vd.names ~= lex.expectId;
-      if (lex.isKw(Keyword.Ass)) lex.error("GML doesn't support variable initialization");
+      if (lex.isKw(Keyword.Ass)) error(vd.locs[$-1], "GML doesn't support variable initialization");
       if (!lex.eatKw(Keyword.Comma)) break;
     }
     endOfStatement();
@@ -376,10 +362,7 @@ final class Parser {
   }
 
   NodeStatement parseBreak () {
-    if (curbreak is null) {
-      if (strict) lex.error("`break` without loop/switch");
-      warning(lex.loc, "`break` without loop/switch");
-    }
+    if (curbreak is null) error(lex.loc, "`break` without loop/switch");
     auto loc = lex.loc;
     lex.expect(Keyword.Break);
     auto res = new NodeStatementBreak(loc, curbreak);
@@ -388,10 +371,7 @@ final class Parser {
   }
 
   NodeStatement parseCont () {
-    if (curcont is null) {
-      if (strict) lex.error("`continue` without loop/switch");
-      warning(lex.loc, "`continue` without loop/switch");
-    }
+    if (curcont is null) error(lex.loc, "`continue` without loop/switch");
     auto loc = lex.loc;
     lex.expect(Keyword.Continue);
     auto res = new NodeStatementContinue(loc, curcont);
@@ -493,8 +473,8 @@ final class Parser {
         case Keyword.Var: return parseVar();
         case Keyword.Globalvar: return parseVar();
         case Keyword.With: return parseWith();
-        case Keyword.Case: lex.error("you cannot use `case` here"); return null;
-        case Keyword.Default: lex.error("you cannot use `default` here"); return null;
+        case Keyword.Case: error(loc, "you cannot use `case` here"); return null;
+        case Keyword.Default: error(loc, "you cannot use `default` here"); return null;
         case Keyword.LParen:
         case Keyword.Add:
         case Keyword.Sub:
@@ -508,7 +488,7 @@ final class Parser {
           goto estat;
         default:
       }
-      lex.error("unexpected keyword: `"~keywordtext(lex.front.kw)~"`");
+      error(loc, "unexpected keyword: `"~keywordtext(lex.front.kw)~"`");
       return null;
     }
     // should be an expression
@@ -537,7 +517,7 @@ final class Parser {
   NodeFunc parseFunction () {
     auto loc = lex.loc;
     lex.expect(Keyword.Function);
-    if (!lex.isId) lex.error("function name expected");
+    if (!lex.isId) error(lex.loc, "function name expected");
     string name = lex.expectId;
     auto fn = new NodeFunc(loc, name);
     fn.ebody = cast(NodeBlock)parseCodeBlock();
