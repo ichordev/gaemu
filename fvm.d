@@ -67,7 +67,7 @@ void main (string[] args) {
     }
     if (measureTime) writeln("executing...");
     auto stt = MonoTime.currTime;
-    auto res = vm.exec("ack", 3, 7);
+    auto res = vm.exec("main");
     auto dur = (MonoTime.currTime-stt).total!"msecs";
     writeln(res);
     if (measureTime) writeln("total execution took ", dur, " milliseconds");
