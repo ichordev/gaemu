@@ -16,6 +16,7 @@ void main (string[] args) {
   bool dumpFileNames = false;
   bool doScripts = true;
   bool doActions = true;
+  bool measureTime = false;
 
   NodeFunc[] funcs;
 
@@ -32,6 +33,7 @@ void main (string[] args) {
       if (fname == "-d") { dumpFileNames = true; continue; }
       if (fname == "-S") { doScripts = false; continue; }
       if (fname == "-A") { doActions = false; continue; }
+      if (fname == "--time") { measureTime = true; continue; }
       if (fname[0] == '@') {
         if (fname.length < 2) assert(0, "gmk file?");
         auto gmk = new Gmk(fname[1..$]);
@@ -57,11 +59,17 @@ void main (string[] args) {
   }
 
   if (funcs.length > 0) {
+    import core.time;
     auto vm = new VM();
     writeln(funcs.length, " function", (funcs.length > 1 ? "s" : ""), " parsed");
     foreach (auto fn; funcs) {
       vm.compile(fn);
     }
-    writeln(vm.exec("ack", 3, 7));
+    if (measureTime) writeln("executing...");
+    auto stt = MonoTime.currTime;
+    auto res = vm.exec("ack", 3, 7);
+    auto dur = (MonoTime.currTime-stt).total!"msecs";
+    writeln(res);
+    if (measureTime) writeln("total execution took ", dur, " milliseconds");
   }
 }

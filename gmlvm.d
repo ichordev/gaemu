@@ -695,7 +695,7 @@ private:
         static assert(0, "invalid argument type");
       }
     }
-    { import std.stdio; writeln(scriptPCs[sid]); }
+    //{ import std.stdio; writeln(scriptPCs[sid]); }
     return doExec(scriptPCs[sid]);
   }
 
@@ -706,7 +706,7 @@ private:
       "auto o0 = bp[opx.opOp0];\n"~
       "auto o1 = bp[opx.opOp1];\n"~
       ack~
-      "if (!o0.isReal || !o1.isReal) runtimeError(pc-1, `invalid type`);\n"~
+      "if (!o0.isReal || !o1.isReal) runtimeError(cast(uint)(cptr-code.ptr-1), `invalid type`);\n"~
       "bp[dest] = o0"~op~"o1;\n"~
       "break;";
     enum BinIOpMixin(string op, string ack="") =
@@ -714,7 +714,7 @@ private:
       "auto o0 = bp[opx.opOp0];\n"~
       "auto o1 = bp[opx.opOp1];\n"~
       ack~
-      "if (!o0.isReal || !o1.isReal) runtimeError(pc-1, `invalid type`);\n"~
+      "if (!o0.isReal || !o1.isReal) runtimeError(cast(uint)(cptr-code.ptr-1), `invalid type`);\n"~
       "bp[dest] = lrint(o0)"~op~"lrint(o1);\n"~
       "break;";
 
@@ -724,13 +724,13 @@ private:
       "auto o1 = bp[opx.opOp1];\n"~
       "assert(!o0.isUndef && !o1.isUndef);\n"~
       "if (o0.isString) {\n"~
-      "  if (!o1.isString) runtimeError(pc-1, `invalid type`);\n"~
+      "  if (!o1.isString) runtimeError(cast(uint)(cptr-code.ptr-1), `invalid type`);\n"~
       "  string s0 = spool[o0.getStrId];\n"~
       "  string s1 = spool[o1.getStrId];\n"~
       "  bp[dest] = (s0 "~op~" s1 ? 1 : 0);\n"~
       "} else {\n"~
       "  assert(o0.isReal);\n"~
-      "  if (!o1.isReal) runtimeError(pc-1, `invalid type`);\n"~
+      "  if (!o1.isReal) runtimeError(cast(uint)(cptr-code.ptr-1), `invalid type`);\n"~
       "  bp[dest] = (o0 "~op~" o1 ? 1 : 0);\n"~
       "}\n"~
       "break;";
@@ -741,13 +741,13 @@ private:
       "auto o1 = bp[opx.opOp1];\n"~
       "assert(!o0.isUndef && !o1.isUndef);\n"~
       "if (o0.isString) {\n"~
-      "  if (!o1.isString) runtimeError(pc-1, `invalid type`);\n"~
+      "  if (!o1.isString) runtimeError(cast(uint)(cptr-code.ptr-1), `invalid type`);\n"~
       "  string s0 = spool[o0.getStrId];\n"~
       "  string s1 = spool[o1.getStrId];\n"~
       "  bp[dest] = (s0.length "~op~" s1.length ? 1 : 0);\n"~
       "} else {\n"~
       "  assert(o0.isReal);\n"~
-      "  if (!o1.isReal) runtimeError(pc-1, `invalid type`);\n"~
+      "  if (!o1.isReal) runtimeError(cast(uint)(cptr-code.ptr-1), `invalid type`);\n"~
       "  bp[dest] = (lrint(o0) "~op~" lrint(o1) ? 1 : 0);\n"~
       "}\n"~
       "break;";
@@ -763,16 +763,16 @@ private:
     assert(stack.length > 0);
     auto bp = &stack[curframe.bp];
     auto origcf = curframe;
+    auto cptr = code.ptr+pc;
     //if (stack.length < 65536) stack.length = 65536;
     debug(vm_exec) uint maxslots = Slot.max+1;
     for (;;) {
-      assert(pc > 0);
       debug(vm_exec) {
         import std.stdio : stderr;
         foreach (immutable idx; 0..maxslots) stderr.writeln("  ", idx, ": ", bp[idx]);
-        dumpInstr(stderr, pc);
+        dumpInstr(stderr, cast(uint)(cptr-code.ptr));
       }
-      auto opx = code.ptr[pc++];
+      auto opx = *cptr++;
       switch (opx.opCode) {
         case Op.nop:
           break;
@@ -799,13 +799,13 @@ private:
         case Op.neg:
           auto dest = opx.opDest;
           auto o0 = bp[opx.opOp0];
-          if (!o0.isReal) runtimeError(pc-1, "invalid type");
+          if (!o0.isReal) runtimeError(cast(uint)(cptr-code.ptr-1), "invalid type");
           bp[dest] = -o0;
           break;
         case Op.bneg:
           auto dest = opx.opDest;
           auto o0 = bp[opx.opOp0];
-          if (!o0.isReal) runtimeError(pc-1, "invalid type");
+          if (!o0.isReal) runtimeError(cast(uint)(cptr-code.ptr-1), "invalid type");
           bp[dest] = cast(int)(~(cast(int)lrint(o0)));
           break;
 
@@ -815,7 +815,7 @@ private:
           auto o1 = bp[opx.opOp1];
           assert(!o0.isUndef && !o1.isUndef);
           if (o0.isString) {
-            if (!o1.isString) runtimeError(pc-1, "invalid type");
+            if (!o1.isString) runtimeError(cast(uint)(cptr-code.ptr-1), "invalid type");
             string s0 = spool[o0.getStrId];
             string s1 = spool[o1.getStrId];
             //FIXME
@@ -830,15 +830,15 @@ private:
             }
           } else {
             assert(o0.isReal);
-            if (!o1.isReal) runtimeError(pc-1, "invalid type");
+            if (!o1.isReal) runtimeError(cast(uint)(cptr-code.ptr-1), "invalid type");
             bp[dest] = o0+o1;
           }
           break;
         case Op.sub: mixin(BinOpMixin!"-");
         case Op.mul: mixin(BinOpMixin!"*");
-        case Op.mod: mixin(BinOpMixin!("%", q{ if (o1 == 0) runtimeError(pc-1, "division by zero"); }));
-        case Op.div: mixin(BinOpMixin!("/", q{ if (o1 == 0) runtimeError(pc-1, "division by zero"); }));
-        case Op.rdiv: mixin(BinOpMixin!("/", q{ if (o1 == 0) runtimeError(pc-1, "division by zero"); }));
+        case Op.mod: mixin(BinOpMixin!("%", q{ if (o1 == 0) runtimeError(cast(uint)(cptr-code.ptr-1), "division by zero"); }));
+        case Op.div: mixin(BinOpMixin!("/", q{ if (o1 == 0) runtimeError(cast(uint)(cptr-code.ptr-1), "division by zero"); }));
+        case Op.rdiv: mixin(BinOpMixin!("/", q{ if (o1 == 0) runtimeError(cast(uint)(cptr-code.ptr-1), "division by zero"); }));
         case Op.bor: mixin(BinIOpMixin!"|");
         case Op.bxor: mixin(BinIOpMixin!"^");
         case Op.band: mixin(BinIOpMixin!"&");
@@ -870,13 +870,13 @@ private:
           break;
 
         case Op.jump: // addr: 3 bytes
-          pc = opx.op3Byte;
+          cptr = code.ptr+opx.op3Byte;
           break;
         case Op.xtrue: // dest is reg to check; skip next instruction if dest is "gml true" (i.e. fabs(v) >= 0.5`)
-          if (lrint(bp[opx.opDest]) != 0) ++pc;
+          if (lrint(bp[opx.opDest]) != 0) ++cptr;
           break;
         case Op.xfalse: // dest is reg to check; skip next instruction if dest is "gml true" (i.e. fabs(v) >= 0.5`)
-          if (lrint(bp[opx.opDest]) == 0) ++pc;
+          if (lrint(bp[opx.opDest]) == 0) ++cptr;
           break;
 
         case Op.call: // dest is result; op0: call frame (see below); op1: number of args
@@ -898,14 +898,14 @@ private:
           }
           bp[opx.opOp0+Slot.Argument0+opx.opOp1] = 0; // just in case
           bp[opx.opOp0..opx.opOp0+Slot.Argument0] = bp[0..Slot.Argument0]; // copy `self` and `other`
-          curframe.pc = pc;
+          curframe.pc = cast(uint)(cptr-code.ptr);
           curframe.rval = opx.opDest;
           ++curframe;
           curframe.bp = curframe[-1].bp+opx.opOp0;
           curframe.script = sid;
           bp = &stack[curframe.bp];
-          pc = scriptPCs[sid];
-          assert(code[pc].opCode == Op.enter);
+          cptr = code.ptr+scriptPCs[sid];
+          //assert((*cptr).opCode == Op.enter);
           if (opx.opOp1 < 16) bp[Slot.Argument0+opx.opOp1..Slot.Argument15+1] = 0;
           break;
 
@@ -937,7 +937,7 @@ private:
           auto rv = bp[opx.opDest];
           // remove stack frame
           bp = &stack[curframe.bp];
-          pc = curframe.pc;
+          cptr = code.ptr+curframe.pc;
           bp[curframe.rval] = rv;
           debug(vm_exec) { import std.stdio : stderr; stderr.writeln("RET(", curframe.rval, "): ", rv); }
           break;
