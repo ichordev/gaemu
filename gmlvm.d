@@ -4,6 +4,59 @@ import gmlparser;
 import std.stdio : File;
 
 
+// ////////////////////////////////////////////////////////////////////////// //
+alias Real = float;
+
+
+// value manipulation
+static bool isReal (Real v) {
+  import std.math;
+  return !isNaN(v);
+}
+
+static bool isString (Real v) {
+  import std.math;
+  return isNaN(v);
+}
+
+static bool isUndef (Real v) {
+  import std.math;
+  return (isNaN(v) && getNaNPayload(v) < 0);
+}
+
+// creates "undefined" value
+static Real undefValue () {
+  import std.math;
+  return NaN(-666);
+}
+
+// for invalid strings it returns 0
+static int getStrId (Real v) {
+  import std.math;
+  if (isNaN(v)) {
+    auto res = getNaNPayload(v);
+    static if (is(Real == float)) {
+      return (res < 0 ? 0 : cast(int)res);
+    } else {
+      return (res < 0 || res > int.max ? 0 : cast(int)res);
+    }
+  } else {
+    return 0;
+  }
+}
+
+Real buildStrId (int id) {
+  import std.math;
+  static if (is(Real == float)) {
+    assert(id >= 0 && id <= 0x3F_FFFF);
+  } else {
+    assert(id >= 0);
+  }
+  return NaN(id);
+}
+
+
+// ////////////////////////////////////////////////////////////////////////// //
 enum Op {
   nop,
 
@@ -44,7 +97,7 @@ enum Op {
 
   call, // dest is result; op0: call frame (see below); op1: number of args
         // call frame is:
-        //   new function frame (starting with return value)
+        //   new function frame
         //   int scriptid (after op1+3 slots)
         // note that there should be no used registers after those (as that will be used as new function frame regs)
 
@@ -58,13 +111,13 @@ enum Op {
 
   //tprim, // same as prim, but does tail call
 
-  enter, // dest: number of stack slots used (including result and args)
+  enter, // op0: number of stack slots used (including result and args); op1: number of locals
          // any function will ALWAYS starts with this
 
   ret, // dest is retvalue; it is copied to reg0; other stack items are discarded
 
   //as we are using refloads only in the last stage of assignment, they can create values
-  lref, // load var reference to dest
+  lref, // load slot reference to dest
   oref, // load object reference to dest; op0: int reg (obj id; -666: global object)
   fref, // load field reference; op0: varref; op1: int reg (field id); can't create fields
   fcrf, // load field reference; op0: varref; op1: int reg (field id); can create field
@@ -96,9 +149,9 @@ enum Op {
 }
 
 
+// ////////////////////////////////////////////////////////////////////////// //
 final class VM {
 public:
-  alias Real = float;
 
 private:
   uint[] code; // [0] is reserved
@@ -111,53 +164,6 @@ private:
   uint[string] fields; // known fields and their offsets in object (and in globals too)
 
 public:
-  // value manipulation
-  static bool isReal (Real v) {
-    import std.math;
-    return !isNaN(v);
-  }
-
-  static bool isString (Real v) {
-    import std.math;
-    return isNaN(v);
-  }
-
-  static bool isUndef (Real v) {
-    import std.math;
-    return (isNaN(v) && getNaNPayload(v) < 0);
-  }
-
-  // creates "undefined" value
-  static Real undefValue () {
-    import std.math;
-    return NaN(-666);
-  }
-
-  // for invalid strings it returns 0
-  static int strId (Real v) {
-    import std.math;
-    if (isNaN(v)) {
-      auto res = getNaNPayload(v);
-      static if (is(Real == float)) {
-        return (res < 0 ? 0 : cast(int)res);
-      } else {
-        return (res < 0 || res > int.max ? 0 : cast(int)res);
-      }
-    } else {
-      return 0;
-    }
-  }
-
-  Real buildStrId (int id) {
-    import std.math;
-    static if (is(Real == float)) {
-      assert(id >= 0 && id <= 0x3F_FFFF);
-    } else {
-      assert(id >= 0);
-    }
-    return NaN(id);
-  }
-
 public:
   this () {
     code.length = 1;
@@ -203,12 +209,35 @@ public:
       case DestInt: fo.writefln("dest:%s; val:%s", code[pc].opDest, code[pc].opILit); break;
       case DestJump: fo.writefln("0x%08x", code[pc].op3Byte); break;
       case DestCall: fo.writefln("dest:%s; frame:%s; args:%s", code[pc].opDest, code[pc].opOp0, code[pc].opOp1); break;
+      case Op0Op1: fo.writefln("op0:%s, op1:%s", code[pc].opOp0, code[pc].opOp1); break;
       default: assert(0);
     }
     return 1;
   }
 
 private:
+  enum Slot {
+    Self,
+    Other,
+    Argument0,
+    Argument1,
+    Argument2,
+    Argument3,
+    Argument4,
+    Argument5,
+    Argument6,
+    Argument7,
+    Argument8,
+    Argument9,
+    Argument10,
+    Argument11,
+    Argument12,
+    Argument13,
+    Argument14,
+    Argument15,
+  }
+
+
   void doCompileFunc (NodeFunc fn) {
 
     uint pc () { return cast(uint)code.length; }
@@ -255,28 +284,6 @@ private:
         code[chain] = (code[chain]&0xff)|(addr<<8);
         chain = nc;
       }
-    }
-
-    enum Slot {
-      RVal = 0,
-      Self,
-      Other,
-      Argument0,
-      Argument1,
-      Argument2,
-      Argument3,
-      Argument4,
-      Argument5,
-      Argument6,
-      Argument7,
-      Argument8,
-      Argument9,
-      Argument10,
-      Argument11,
-      Argument12,
-      Argument13,
-      Argument14,
-      Argument15,
     }
 
     assert(fn !is null);
@@ -363,12 +370,51 @@ private:
       return VisitRes.Continue;
     });
 
-    ushort allocNumConst (Real v) {
-      return 0;
+    ushort allocNumConst (Real v, Loc loc) {
+      //FIXME: speed it up!
+      foreach (immutable idx, Real vp; vpool) {
+        if (vp == v) return cast(ushort)idx;
+      }
+      auto vpi = cast(uint)vpool.length;
+      if (vpi > ushort.max) compileError(loc, "too many constants");
+      vpool ~= v;
+      return cast(ushort)vpi;
     }
 
-    ushort allocStrConst (string s) {
-      return 0;
+    ushort allocStrConst (string s, Loc loc) {
+      //FIXME: speed it up!
+      foreach (immutable idx, string vp; spool) {
+        if (vp == s) return allocNumConst(buildStrId(cast(uint)idx), loc);
+      }
+      auto sidx = cast(uint)spool.length;
+      spool ~= s;
+      return allocNumConst(buildStrId(sidx), loc);
+    }
+
+    int varSlot (string name) {
+      switch (name) {
+        case "argument0": return Slot.Argument0+0;
+        case "argument1": return Slot.Argument0+1;
+        case "argument2": return Slot.Argument0+2;
+        case "argument3": return Slot.Argument0+3;
+        case "argument4": return Slot.Argument0+4;
+        case "argument5": return Slot.Argument0+5;
+        case "argument6": return Slot.Argument0+6;
+        case "argument7": return Slot.Argument0+7;
+        case "argument8": return Slot.Argument0+8;
+        case "argument9": return Slot.Argument0+9;
+        case "argument10": return Slot.Argument0+10;
+        case "argument11": return Slot.Argument0+11;
+        case "argument12": return Slot.Argument0+12;
+        case "argument13": return Slot.Argument0+13;
+        case "argument14": return Slot.Argument0+14;
+        case "argument15": return Slot.Argument0+15;
+        case "self": return Slot.Self;
+        case "other": return Slot.Other;
+        default:
+      }
+      if (auto v = name in locals) return *v;
+      return -1;
     }
 
     // returns dest slot
@@ -394,13 +440,18 @@ private:
 
       return selectNode!ubyte(nn,
         (NodeLiteralNum n) {
+          import core.stdc.math : lrint;
           auto dest = allocSlot(n.loc, ddest);
-          emit2Bytes(Op.plit, dest, allocNumConst(n.val));
+          if (lrint(n.val) == n.val && lrint(n.val) >= short.min && lrint(n.val) <= short.max) {
+            emit2Bytes(Op.ilit, dest, cast(short)lrint(n.val));
+          } else {
+            emit2Bytes(Op.plit, dest, allocNumConst(n.val, n.loc));
+          }
           return dest;
         },
         (NodeLiteralStr n) {
           auto dest = allocSlot(n.loc, ddest);
-          emit2Bytes(Op.plit, dest, allocStrConst(n.val));
+          emit2Bytes(Op.plit, dest, allocStrConst(n.val, n.loc));
           return dest;
         },
         (NodeUnaryParens n) => compileExpr(n.e, ddest, wantref),
@@ -409,11 +460,18 @@ private:
         (NodeUnaryBitNeg n) => doUnOp(Op.bneg, n),
         (NodeBinaryAss n) {
           if (cast(NodeId)n.el is null && cast(NodeDot)n.el is null && cast(NodeIndex)n.el is null) compileError(n.loc, "assignment to rvalue");
-          auto src = compileExpr(n.er);
-          auto dest = compileExpr(n.el, true);
-          emit(Op.rstore, dest, src);
-          freeSlot(src);
-          freeSlot(dest);
+          if (auto did = cast(NodeId)n.el) {
+            auto vdst = varSlot(did.name);
+            assert(vdst >= 0);
+            auto dest = compileExpr(n.er, ddest:vdst);
+            freeSlot(dest);
+          } else {
+            auto src = compileExpr(n.er);
+            auto dest = compileExpr(n.el, wantref:true);
+            emit(Op.rstore, dest, src);
+            freeSlot(src);
+            freeSlot(dest);
+          }
           return 0;
         },
         (NodeBinaryAdd n) => doBinOp(Op.add, n),
@@ -438,10 +496,7 @@ private:
         (NodeBinaryLogXor n) => doBinOp(Op.lxor, n),
         (NodeFCall n) {
           auto dest = allocSlot(n.loc, ddest);
-          if (auto id = cast(NodeId)n.fe) {
-          } else {
-            compileError(n.loc, "invalid function call");
-          }
+          if (cast(NodeId)n.fe is null) compileError(n.loc, "invalid function call");
           ubyte[16] slt;
           if (n.args.length > 16) compileError(n.loc, "too many arguments in function call");
           foreach (immutable idx, Node a; n.args) slt[idx] = compileExpr(a);
@@ -464,50 +519,45 @@ private:
           // put script id
           if (auto aptr = (cast(NodeId)n.fe).name in scripts) {
             // known script
-            emit2Bytes(Op.ilit, cast(ubyte)(fcs+Slot.Argument0+n.args.length), cast(short)(*aptr));
+            emit2Bytes(Op.xlit, cast(ubyte)(fcs+Slot.Argument0+n.args.length), cast(short)(*aptr));
           } else {
             auto snum = cast(uint)scriptPCs.length;
             if (snum > 32767) compileError(n.loc, "too many scripts");
             scriptPCs ~= 0;
             scripts[(cast(NodeId)n.fe).name] = snum;
             // unknown script
-            emit2Bytes(Op.ilit, cast(ubyte)(fcs+Slot.Argument0+n.args.length), cast(short)snum);
+            emit2Bytes(Op.xlit, cast(ubyte)(fcs+Slot.Argument0+n.args.length), cast(short)snum);
           }
           // emit call
           emit(Op.call, dest, fcs, cast(ubyte)n.args.length);
           return dest;
         },
         (NodeId n) {
-          switch (n.name) {
-            case "argument0": return cast(ubyte)(Slot.Argument0+0);
-            case "argument1": return cast(ubyte)(Slot.Argument0+1);
-            case "argument2": return cast(ubyte)(Slot.Argument0+2);
-            case "argument3": return cast(ubyte)(Slot.Argument0+3);
-            case "argument4": return cast(ubyte)(Slot.Argument0+4);
-            case "argument5": return cast(ubyte)(Slot.Argument0+5);
-            case "argument6": return cast(ubyte)(Slot.Argument0+6);
-            case "argument7": return cast(ubyte)(Slot.Argument0+7);
-            case "argument8": return cast(ubyte)(Slot.Argument0+8);
-            case "argument9": return cast(ubyte)(Slot.Argument0+9);
-            case "argument10": return cast(ubyte)(Slot.Argument0+10);
-            case "argument11": return cast(ubyte)(Slot.Argument0+11);
-            case "argument12": return cast(ubyte)(Slot.Argument0+12);
-            case "argument13": return cast(ubyte)(Slot.Argument0+13);
-            case "argument14": return cast(ubyte)(Slot.Argument0+14);
-            case "argument15": return cast(ubyte)(Slot.Argument0+15);
-            case "self": return cast(ubyte)(Slot.Self);
-            case "other": return cast(ubyte)(Slot.Other);
-            default:
+          if (wantref) {
+            auto vsl = varSlot(n.name);
+            assert(vsl >= 0);
+            auto dest = allocSlot(n.loc, ddest);
+            emit(Op.lref, dest, cast(ubyte)vsl);
+            return dest;
+          } else {
+            auto vsl = varSlot(n.name);
+            assert(vsl >= 0);
+            auto dest = allocSlot(n.loc, ddest);
+            if (dest == vsl) return dest;
+            emit(Op.copy, dest, cast(ubyte)vsl, 1);
+            return dest;
           }
-          if (auto v = n.name in locals) return *v;
-          return 0;
+          assert(0);
+          //return 0;
         },
         (NodeDot n) {
+          assert(0);
         },
         (NodeIndex n) {
           //if (auto r = visitNodes(n.ei0, dg)) return r;
           //if (auto r = visitNodes(n.ei1, dg)) return r;
           //return visitNodes(n.e, dg);
+          assert(0);
         },
         () { assert(0, "unimplemented node: "~typeid(nn).name); },
       );
@@ -526,7 +576,8 @@ private:
         },
         (NodeReturn n) {
           if (n.e is null) {
-            emit(Op.ret, Slot.RVal);
+            emit2Bytes(Op.ilit, 0, 0);
+            emit(Op.ret, 0);
           } else {
             auto dest = compileExpr(n.e);
             emit(Op.ret, dest);
@@ -539,7 +590,7 @@ private:
         (NodeIf n) {
           auto cs = compileExpr(n.ec);
           freeSlot(cs); // yep, free it here
-          emit(Op.xtrue);
+          emit(Op.xtrue, cs);
           uint jfc = 0;
           // simple optimization
           jfc = emitJumpChain(0, Op.jump);
@@ -595,14 +646,328 @@ private:
     compile(fn.ebody);
     emit(Op.ret);
     // patch enter
-    code[startpc] = (maxUsedSlot<<8)|cast(ubyte)Op.enter;
-    if (fn.name !in scripts) {
+    code[startpc] = (locals.length<<24)|((maxUsedSlot+1)<<16)|cast(ubyte)Op.enter;
+    if (auto sid = fn.name in scripts) {
+      scriptPCs[*sid] = startpc;
+    } else {
       auto snum = cast(uint)scriptPCs.length;
       if (snum > 32767) compileError(fn.loc, "too many scripts");
       scriptPCs ~= startpc;
       scripts[fn.name] = snum;
     }
   }
+
+private:
+  static struct CallFrame {
+    uint script;
+    uint bp; // base pointer (address of the current frame in stack)
+    uint pc; // current pc; will be set on "call"
+    ubyte rval; // slot for return value; will be set on "call"
+    @disable this (this);
+  }
+  CallFrame[32768] frames;
+  CallFrame* curframe;
+  Real[] stack;
+
+  void runtimeError(A...) (uint pc, A args) {
+    import std.stdio : stderr;
+    stderr.writef("ERROR at %08X: ", pc);
+    stderr.writeln(args);
+    throw new Exception("fuuuuu");
+  }
+
+  public Real exec(A...) (string name, A args) {
+    static assert(A.length < 16, "too many arguments");
+    auto sid = scripts[name];
+    assert(curframe is null);
+    // create frame
+    if (stack.length < 65536) stack.length = 65536;
+    curframe = &frames[0];
+    curframe.bp = 0;
+    stack[0..Slot.max+1] = 0;
+    foreach (immutable idx, immutable a; args) {
+      static if (is(typeof(a) : const(char)[])) {
+        //FIXME
+        assert(0);
+      } else static if (is(typeof(a) : Real)) {
+        stack[Slot.Argument0+idx] = cast(Real)a;
+      } else {
+        static assert(0, "invalid argument type");
+      }
+    }
+    { import std.stdio; writeln(scriptPCs[sid]); }
+    return doExec(scriptPCs[sid]);
+  }
+
+  // current frame must be properly initialized
+  Real doExec (uint pc) {
+    enum BinOpMixin(string op, string ack="") =
+      "auto dest = opx.opDest;\n"~
+      "auto o0 = bp[opx.opOp0];\n"~
+      "auto o1 = bp[opx.opOp1];\n"~
+      ack~
+      "if (!o0.isReal || !o1.isReal) runtimeError(pc-1, `invalid type`);\n"~
+      "bp[dest] = o0"~op~"o1;\n"~
+      "break;";
+    enum BinIOpMixin(string op, string ack="") =
+      "auto dest = opx.opDest;\n"~
+      "auto o0 = bp[opx.opOp0];\n"~
+      "auto o1 = bp[opx.opOp1];\n"~
+      ack~
+      "if (!o0.isReal || !o1.isReal) runtimeError(pc-1, `invalid type`);\n"~
+      "bp[dest] = lrint(o0)"~op~"lrint(o1);\n"~
+      "break;";
+
+    enum BinCmpMixin(string op) =
+      "auto dest = opx.opDest;\n"~
+      "auto o0 = bp[opx.opOp0];\n"~
+      "auto o1 = bp[opx.opOp1];\n"~
+      "assert(!o0.isUndef && !o1.isUndef);\n"~
+      "if (o0.isString) {\n"~
+      "  if (!o1.isString) runtimeError(pc-1, `invalid type`);\n"~
+      "  string s0 = spool[o0.getStrId];\n"~
+      "  string s1 = spool[o1.getStrId];\n"~
+      "  bp[dest] = (s0 "~op~" s1 ? 1 : 0);\n"~
+      "} else {\n"~
+      "  assert(o0.isReal);\n"~
+      "  if (!o1.isReal) runtimeError(pc-1, `invalid type`);\n"~
+      "  bp[dest] = (o0 "~op~" o1 ? 1 : 0);\n"~
+      "}\n"~
+      "break;";
+
+    enum BinLogMixin(string op) =
+      "auto dest = opx.opDest;\n"~
+      "auto o0 = bp[opx.opOp0];\n"~
+      "auto o1 = bp[opx.opOp1];\n"~
+      "assert(!o0.isUndef && !o1.isUndef);\n"~
+      "if (o0.isString) {\n"~
+      "  if (!o1.isString) runtimeError(pc-1, `invalid type`);\n"~
+      "  string s0 = spool[o0.getStrId];\n"~
+      "  string s1 = spool[o1.getStrId];\n"~
+      "  bp[dest] = (s0.length "~op~" s1.length ? 1 : 0);\n"~
+      "} else {\n"~
+      "  assert(o0.isReal);\n"~
+      "  if (!o1.isReal) runtimeError(pc-1, `invalid type`);\n"~
+      "  bp[dest] = (lrint(o0) "~op~" lrint(o1) ? 1 : 0);\n"~
+      "}\n"~
+      "break;";
+
+    static if (is(Real == float)) {
+      import core.stdc.math : lrint = lrintf;
+    } else {
+      import core.stdc.math : lrint;
+    }
+    assert(curframe !is null);
+    assert(pc > 0 && pc < code.length);
+    assert(code[pc].opCode == Op.enter);
+    assert(stack.length > 0);
+    auto bp = &stack[curframe.bp];
+    auto origcf = curframe;
+    //if (stack.length < 65536) stack.length = 65536;
+    debug(vm_exec) uint maxslots = Slot.max+1;
+    for (;;) {
+      assert(pc > 0);
+      debug(vm_exec) {
+        import std.stdio : stderr;
+        foreach (immutable idx; 0..maxslots) stderr.writeln("  ", idx, ": ", bp[idx]);
+        dumpInstr(stderr, pc);
+      }
+      auto opx = code.ptr[pc++];
+      switch (opx.opCode) {
+        case Op.nop:
+          break;
+
+        case Op.copy: // copy regs; dest: dest reg; op0: first reg to copy; op1: number of regs to copy (0: no copy, lol)
+          import core.stdc.string : memmove;
+          auto dest = opx.opDest;
+          auto first = opx.opOp0;
+          auto count = opx.opOp1;
+          if (count) memmove(bp+dest, bp+first, count*Real.sizeof);
+          break;
+
+        case Op.lnot: // lognot
+          auto dest = opx.opDest;
+          auto o0 = bp[opx.opOp0];
+          assert(!o0.isUndef);
+          if (o0.isString) {
+            auto s0 = spool[o0.getStrId];
+            bp[dest] = (s0.length ? 0 : 1);
+          } else {
+            bp[dest] = (lrint(o0) ? 0 : 1);
+          }
+          break;
+        case Op.neg:
+          auto dest = opx.opDest;
+          auto o0 = bp[opx.opOp0];
+          if (!o0.isReal) runtimeError(pc-1, "invalid type");
+          bp[dest] = -o0;
+          break;
+        case Op.bneg:
+          auto dest = opx.opDest;
+          auto o0 = bp[opx.opOp0];
+          if (!o0.isReal) runtimeError(pc-1, "invalid type");
+          bp[dest] = cast(int)(~(cast(int)lrint(o0)));
+          break;
+
+        case Op.add:
+          auto dest = opx.opDest;
+          auto o0 = bp[opx.opOp0];
+          auto o1 = bp[opx.opOp1];
+          assert(!o0.isUndef && !o1.isUndef);
+          if (o0.isString) {
+            if (!o1.isString) runtimeError(pc-1, "invalid type");
+            string s0 = spool[o0.getStrId];
+            string s1 = spool[o1.getStrId];
+            //FIXME
+            if (s0.length == 0) {
+              bp[dest] = o1;
+            } else if (s1.length == 0) {
+              bp[dest] = o0;
+            } else {
+              auto sidx = cast(uint)spool.length;
+              spool ~= s0~s1;
+              bp[dest] = buildStrId(sidx);
+            }
+          } else {
+            assert(o0.isReal);
+            if (!o1.isReal) runtimeError(pc-1, "invalid type");
+            bp[dest] = o0+o1;
+          }
+          break;
+        case Op.sub: mixin(BinOpMixin!"-");
+        case Op.mul: mixin(BinOpMixin!"*");
+        case Op.mod: mixin(BinOpMixin!("%", q{ if (o1 == 0) runtimeError(pc-1, "division by zero"); }));
+        case Op.div: mixin(BinOpMixin!("/", q{ if (o1 == 0) runtimeError(pc-1, "division by zero"); }));
+        case Op.rdiv: mixin(BinOpMixin!("/", q{ if (o1 == 0) runtimeError(pc-1, "division by zero"); }));
+        case Op.bor: mixin(BinIOpMixin!"|");
+        case Op.bxor: mixin(BinIOpMixin!"^");
+        case Op.band: mixin(BinIOpMixin!"&");
+        case Op.shl: mixin(BinIOpMixin!"<<");
+        case Op.shr: mixin(BinIOpMixin!">>");
+
+        case Op.lt: mixin(BinCmpMixin!"<");
+        case Op.le: mixin(BinCmpMixin!"<=");
+        case Op.gt: mixin(BinCmpMixin!">");
+        case Op.ge: mixin(BinCmpMixin!">=");
+        case Op.eq: mixin(BinCmpMixin!"==");
+        case Op.ne: mixin(BinCmpMixin!"!=");
+
+        case Op.lor: mixin(BinLogMixin!"||");
+        case Op.land: mixin(BinLogMixin!"&&");
+        case Op.lxor: assert(0);
+
+        case Op.plit: // dest becomes pool slot val (val: 2 bytes) -- load value from pool slot
+          auto dest = opx.opDest;
+          bp[dest] = vpool[opx.op2Byte];
+          break;
+        case Op.ilit: // dest becomes ilit val (val: short) -- load small integer literal
+          auto dest = opx.opDest;
+          bp[dest] = opx.opILit;
+          break;
+        case Op.xlit: // dest becomes integer(!) val (val: short) -- load small integer literal
+          auto dest = opx.opDest;
+          *cast(uint*)(bp+dest) = opx.opILit;
+          break;
+
+        case Op.jump: // addr: 3 bytes
+          pc = opx.op3Byte;
+          break;
+        case Op.xtrue: // dest is reg to check; skip next instruction if dest is "gml true" (i.e. fabs(v) >= 0.5`)
+          if (lrint(bp[opx.opDest]) != 0) ++pc;
+          break;
+        case Op.xfalse: // dest is reg to check; skip next instruction if dest is "gml true" (i.e. fabs(v) >= 0.5`)
+          if (lrint(bp[opx.opDest]) == 0) ++pc;
+          break;
+
+        case Op.call: // dest is result; op0: call frame (see below); op1: number of args
+              // call frame is:
+              //   new function frame
+              //   int scriptid (after op1+3 slots)
+              // note that there should be no used registers after those (as that will be used as new function frame regs)
+          auto sid = *cast(uint*)(bp+opx.opOp0+Slot.Argument0+opx.opOp1);
+          debug(vm_exec) {
+            import std.stdio : stderr;
+            foreach (auto kv; scripts.byKeyValue) {
+              if (kv.value == sid) {
+                stderr.writeln("calling '", kv.key, "'");
+                foreach (immutable aidx; 0..opx.opOp1) {
+                  stderr.writeln("  ", bp[opx.opOp0+Slot.Argument0+aidx]);
+                }
+              }
+            }
+          }
+          bp[opx.opOp0+Slot.Argument0+opx.opOp1] = 0; // just in case
+          bp[opx.opOp0..opx.opOp0+Slot.Argument0] = bp[0..Slot.Argument0]; // copy `self` and `other`
+          curframe.pc = pc;
+          curframe.rval = opx.opDest;
+          ++curframe;
+          curframe.bp = curframe[-1].bp+opx.opOp0;
+          curframe.script = sid;
+          bp = &stack[curframe.bp];
+          pc = scriptPCs[sid];
+          assert(code[pc].opCode == Op.enter);
+          if (opx.opOp1 < 16) bp[Slot.Argument0+opx.opOp1..Slot.Argument15+1] = 0;
+          break;
+
+        //tcall, // same as call, but does tail call
+
+        //case Op.prim: // call "primitive" (built-in function); dest is result; op0: call frame (see below); op1: number of args
+              // call frame is:
+              //   new function frame (starting with return value)
+              //   int primid (after op1+3 slots)
+              // note that there should be no used registers after those (as that will be used as new function frame regs)
+
+        //tprim, // same as prim, but does tail call
+
+        case Op.enter: // op0: number of stack slots used (including result and args); op1: number of locals
+          if (curframe.bp+opx.opOp0 > stack.length) {
+            stack.length = curframe.bp+opx.opOp0;
+            bp = &stack[curframe.bp];
+          }
+          //foreach (immutable idx; Slot.max+1..Slot.max+1+opx.opOp1) bp[idx] = 0; // clear locals
+          if (opx.opOp1) bp[Slot.max+1..Slot.max+1+opx.opOp1] = 0; // clear locals
+          debug(vm_exec) maxslots = opx.opOp0;
+          debug(vm_exec) { import std.stdio : stderr; foreach (immutable idx; Slot.Argument0..Slot.Argument15+1) stderr.writeln("  :", bp[idx]); }
+          break;
+
+        case Op.ret: // dest is retvalue; it is copied to reg0; other stack items are discarded
+          if (curframe is origcf) return bp[opx.opDest]; // done
+          assert(cast(uint)curframe > cast(uint)origcf);
+          --curframe;
+          auto rv = bp[opx.opDest];
+          // remove stack frame
+          bp = &stack[curframe.bp];
+          pc = curframe.pc;
+          bp[curframe.rval] = rv;
+          debug(vm_exec) { import std.stdio : stderr; stderr.writeln("RET(", curframe.rval, "): ", rv); }
+          break;
+
+        //as we are using refloads only in the last stage of assignment, they can create values
+        case Op.lref: // load slot reference to dest
+          *cast(int*)bp[opx.opDest] = opx.opOp0;
+          break;
+        //case Op.oref: // load object reference to dest; op0: int reg (obj id; -666: global object)
+        //case Op.fref: // load field reference; op0: varref; op1: int reg (field id); can't create fields
+        //case Op.fcrf: // load field reference; op0: varref; op1: int reg (field id); can create field
+        //case Op.iref: // load indexed reference; op0: varref; op1: int reg (index)
+        //case Op.mref: // load indexed reference; op0: varref; op1: int reg (first index); (op1+1): int reg (second index)
+
+        //case Op.rload: // load from op0-varref to dest
+        case Op.rstore: // store to op0-varref from op1
+          auto x = *cast(int*)bp[opx.opOp0];
+          assert(x >= 0 && x <= 255);
+          bp[x] = bp[opx.opOp1];
+          break;
+
+        //case Op.oload: // load object field to dest; op0: int reg (obj id; -666: global object); op1: int reg (field id)
+        //case Op.iload: // load indexed (as iref)
+        //case Op.mload: // load indexed (as mref)
+        default: assert(0);
+      }
+    }
+  }
+
+
 
 static:
   enum OpArgs {
@@ -615,6 +980,7 @@ static:
     DestInt,
     DestJump,
     DestCall,
+    Op0Op1,
   }
   immutable OpArgs[ubyte] opargs;
   shared static this () {
@@ -660,7 +1026,7 @@ static:
       Op.prim: DestCall,
       //Op.tprim: DestCall,
 
-      Op.enter: Dest,
+      Op.enter: Op0Op1,
 
       Op.ret: Dest,
 

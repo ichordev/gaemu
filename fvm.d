@@ -62,5 +62,6 @@ void main (string[] args) {
     foreach (auto fn; funcs) {
       vm.compile(fn);
     }
+    writeln(vm.exec("ack", 3, 7));
   }
 }
