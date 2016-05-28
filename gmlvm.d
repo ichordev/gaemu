@@ -102,10 +102,9 @@ public:
 
 private:
   uint[] code; // [0] is reserved
-  uint[string] scripts;
+  uint[string] scripts; // name -> number
+  uint[] scriptPCs; // by number; 0 is reserved
   // fixuper will not remove fixup chains, so we can replace script with new one
-  uint[string] scriptFixups; // fixup chains
-  bool[string] scriptsOk; // set for each successfully fixuped script
   Real[] vpool; // pool of values
   string[] spool; // pool of strings
   Real[] globals;
@@ -162,6 +161,7 @@ public:
 public:
   this () {
     code.length = 1;
+    scriptPCs.length = 1;
   }
 
   void compile (NodeFunc fn) {
@@ -228,7 +228,7 @@ private:
 
     uint emit2Bytes (Op op, ubyte dest, short val) {
       auto res = cast(uint)code.length;
-      code ~= (val<<16)|cast(ubyte)op;
+      code ~= (val<<16)|(dest<<8)|cast(ubyte)op;
       return res;
     }
 
@@ -462,6 +462,17 @@ private:
           }
           foreach (immutable idx, Node a; n.args) freeSlot(slt[idx]);
           // put script id
+          if (auto aptr = (cast(NodeId)n.fe).name in scripts) {
+            // known script
+            emit2Bytes(Op.ilit, cast(ubyte)(fcs+Slot.Argument0+n.args.length), cast(short)(*aptr));
+          } else {
+            auto snum = cast(uint)scriptPCs.length;
+            if (snum > 32767) compileError(n.loc, "too many scripts");
+            scriptPCs ~= 0;
+            scripts[(cast(NodeId)n.fe).name] = snum;
+            // unknown script
+            emit2Bytes(Op.ilit, cast(ubyte)(fcs+Slot.Argument0+n.args.length), cast(short)snum);
+          }
           // emit call
           emit(Op.call, dest, fcs, cast(ubyte)n.args.length);
           return dest;
@@ -585,6 +596,12 @@ private:
     emit(Op.ret);
     // patch enter
     code[startpc] = (maxUsedSlot<<8)|cast(ubyte)Op.enter;
+    if (fn.name !in scripts) {
+      auto snum = cast(uint)scriptPCs.length;
+      if (snum > 32767) compileError(fn.loc, "too many scripts");
+      scriptPCs ~= startpc;
+      scripts[fn.name] = snum;
+    }
   }
 
 static:
