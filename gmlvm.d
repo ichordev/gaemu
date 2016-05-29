@@ -448,6 +448,7 @@ private:
     ubyte[string] locals;
     uint[string] globals;
     Loc[string] vdecls; // for error messages
+    ubyte maxArgUsed; // maximum `argumentX` we've seen
 
     // collect var declarations (gml is not properly scoped)
     visitNodes(fn.ebody, (Node n) {
@@ -730,6 +731,12 @@ private:
           return dest;
         },
         (NodeId n) {
+          // keep track of maximum argument we've seen
+          if (maxArgUsed < 15) {
+            if (auto ai = argvar(n.name)) {
+              if (ai > maxArgUsed) maxArgUsed = cast(ubyte)ai;
+            }
+          }
           if (wantref) {
             auto vsl = varSlot(n.name);
             assert(vsl >= 0);
@@ -958,7 +965,7 @@ private:
     emit(Op.ret);
     fn.pce = pc;
     // patch enter
-    code[startpc] = (locals.length<<24)|((maxUsedSlot+1)<<16)|cast(ubyte)Op.enter;
+    code[startpc] = (locals.length<<24)|((maxUsedSlot+1)<<16)|(maxArgUsed<<8)|cast(ubyte)Op.enter;
     scriptPCs[sid] = startpc;
     scriptASTs[sid] = fn;
   }
@@ -1267,11 +1274,14 @@ private:
           curframe.script = sid;
           cptr = code.ptr+scriptPCs.ptr[sid];
           //assert((*cptr).opCode == Op.enter);
-          // clear unused arguments
-          if (opx.opOp1 < 16) bp[Slot.Argument0+opx.opOp1..Slot.Argument15+1] = 0;
+          // clear unused arguments, if any
+          // we know that first instruction is always Op.enter, use that fact
+          auto aused = (*cptr).opDest+1;
+          //{ import std.stdio; writeln("aused=", aused, "; op1=", opx.opOp1); }
+          if (aused > opx.opOp1) bp[Slot.Argument0+opx.opOp1..Slot.Argument0+aused] = 0;
           break;
 
-        case Op.enter: // op0: number of stack slots used (including result and args); op1: number of locals
+        case Op.enter: // dest: number of arguments used; op0: number of stack slots used (including result and args); op1: number of locals
           if (curframe.bp+opx.opOp0 > stack.length) {
             stack.length = curframe.bp+opx.opOp0;
             bp = &stack[curframe.bp];
