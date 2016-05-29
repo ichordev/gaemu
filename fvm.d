@@ -12,6 +12,30 @@ import gmlvm;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
+void registerPrims (VM vm) {
+  vm["write"] = (VM self, Real* bp, ubyte argc) {
+    import std.stdio : stdout;
+    foreach (immutable idx; 0..argc) {
+      auto v = bp[vm.Slot.Argument0+idx];
+      if (v.isString) stdout.write(vm.getDynStr(v.getStrId)); else stdout.write(v);
+    }
+    stdout.flush();
+  };
+  vm["writeln"] = (VM self, Real* bp, ubyte argc) {
+    import std.stdio : stdout;
+    foreach (immutable idx; 0..argc) {
+      auto v = bp[vm.Slot.Argument0+idx];
+      if (v.isString) stdout.write(vm.getDynStr(v.getStrId)); else stdout.write(v);
+    }
+    stdout.writeln;
+    stdout.flush();
+  };
+
+  vm["string_length"] = (string s) => s.length;
+}
+
+
+// ////////////////////////////////////////////////////////////////////////// //
 void main (string[] args) {
   bool dumpFileNames = false;
   bool doScripts = true;
@@ -61,6 +85,7 @@ void main (string[] args) {
   if (funcs.length > 0) {
     import core.time;
     auto vm = new VM();
+    vm.registerPrims();
     writeln(funcs.length, " function", (funcs.length > 1 ? "s" : ""), " parsed");
     foreach (auto fn; funcs) {
       vm.compile(fn);

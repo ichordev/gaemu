@@ -1,7 +1,9 @@
 module gmlvm is aliced;
 
-import gmlparser;
 import std.stdio : File;
+import std.traits;
+
+import gmlparser;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
@@ -10,29 +12,29 @@ alias Real = double;
 
 
 // value manipulation
-static bool isReal (Real v) {
+bool isReal (Real v) {
   import std.math;
   return !isNaN(v);
 }
 
-static bool isString (Real v) {
+bool isString (Real v) {
   import std.math;
   return isNaN(v);
 }
 
-static bool isUndef (Real v) {
+bool isUndef (Real v) {
   import std.math;
   return (isNaN(v) && getNaNPayload(v) < 0);
 }
 
 // creates "undefined" value
-static Real undefValue () {
+Real undefValue () {
   import std.math;
   return NaN(-666);
 }
 
 // for invalid strings it returns 0
-static int getStrId (Real v) {
+int getStrId (Real v) {
   import std.math;
   if (isNaN(v)) {
     auto res = getNaNPayload(v);
@@ -54,6 +56,14 @@ Real buildStrId (int id) {
     assert(id >= 0);
   }
   return NaN(id);
+}
+
+
+Real Value(T) (VM vm, T v) {
+  pragma(inline, true);
+       static if (is(T : const(char)[])) return buildStrId(vm.newDynStr(v));
+  else static if (is(T : Real)) return cast(Real)v;
+  else static assert(0, "invalid value type");
 }
 
 
@@ -144,28 +154,105 @@ enum Op {
 // ////////////////////////////////////////////////////////////////////////// //
 final class VM {
 public:
+  enum Slot {
+    Self,
+    Other,
+    Argument0,
+    Argument1,
+    Argument2,
+    Argument3,
+    Argument4,
+    Argument5,
+    Argument6,
+    Argument7,
+    Argument8,
+    Argument9,
+    Argument10,
+    Argument11,
+    Argument12,
+    Argument13,
+    Argument14,
+    Argument15,
+  }
+
+private:
+  alias PrimDg = Real delegate (uint pc, Real* bp, ubyte argc);
+
+  static struct Str {
+    string val; // string value
+    uint rc; // refcount; <0: persistent string; also serves as free list index with 31 bit set
+  }
 
 private:
   uint[] code; // [0] is reserved
   uint[string] scripts; // name -> number
   string[uint] scriptNum2Name;
-  uint[] scriptPCs; // by number; 0 is reserved
+  int[] scriptPCs; // by number; 0 is reserved; <0: primitive number
   NodeFunc[] scriptASTs; // by number
+  PrimDg[] prims; // by number
   // fixuper will not remove fixup chains, so we can replace script with new one
   Real[] vpool; // pool of values
-  string[] spool; // pool of strings
+  Str[] spool; // pool of strings
+  uint spoolFree = 0x8000_0000; // none
   Real[] globals;
   uint[string] fields; // known fields and their offsets in object (and in globals too)
 
 public:
+  // has rc of 1
+  uint newDynStr(T) (T str) if (is(T : const(char)[])) {
+    if (str.length == 0) return 0;
+    if (str.length == 1) return cast(uint)str.ptr[0]+1;
+    static if (is(T == string)) alias sv = str; else auto sv = str.idup;
+    if (spoolFree&0x7fff_ffff) {
+      // reuse existing
+      auto sid = spoolFree&0x7fff_ffff;
+      auto ss = spool.ptr+sid;
+      spoolFree = ss.rc;
+      ss.val = sv;
+      ss.rc = 1;
+      return sid;
+    } else {
+      // allocate new
+      auto sid = cast(uint)spool.length;
+      if (sid > 0x3F_FFFF) assert(0, "too many dynamic strings");
+      spool ~= Str(sv, 1);
+      return sid;
+    }
+  }
+
+  void dynStrIncRef (uint sid) {
+    pragma(inline, true);
+    if (sid < spool.length && spool.ptr[sid].rc > 0) {
+      assert(spool.ptr[sid].rc < 0x8000_0000);
+      ++spool.ptr[sid].rc;
+    }
+  }
+
+  void dynStrDecRef (uint sid) {
+    pragma(inline, true);
+    if (sid < spool.length && spool.ptr[sid].rc > 0) {
+      assert(spool.ptr[sid].rc < 0x8000_0000);
+      if (--spool.ptr[sid].rc == 0) {
+        spool.ptr[sid].rc = spoolFree;
+        spoolFree = sid|0x8000_0000;
+      }
+    }
+  }
+
+  string getDynStr (uint sid) {
+    pragma(inline, true);
+    return (sid < spool.length && spool.ptr[sid].rc < 0x8000_0000 ? spool.ptr[sid].val : null);
+  }
+
 public:
   this () {
     code.length = 1;
     scriptPCs.length = 1;
     scriptASTs.length = 1;
+    prims.length = 1;
     // preallocate small strings
-    spool ~= null;
-    foreach (ubyte c; 0..256) spool ~= ""~cast(char)c;
+    spool ~= Str("", 0);
+    foreach (ubyte c; 0..256) spool ~= Str(""~cast(char)c, 0);
   }
 
   void compile (NodeFunc fn) {
@@ -214,28 +301,6 @@ public:
   }
 
 private:
-  enum Slot {
-    Self,
-    Other,
-    Argument0,
-    Argument1,
-    Argument2,
-    Argument3,
-    Argument4,
-    Argument5,
-    Argument6,
-    Argument7,
-    Argument8,
-    Argument9,
-    Argument10,
-    Argument11,
-    Argument12,
-    Argument13,
-    Argument14,
-    Argument15,
-  }
-
-
   void doCompileFunc (NodeFunc fn) {
     int argvar (string s) {
       switch (s) {
@@ -495,7 +560,7 @@ private:
 
     void emitPLit (Loc loc, ubyte dest, Real v) {
       uint vpidx = uint.max;
-      if (isReal(v)) {
+      if (v.isReal) {
         // number
         import core.stdc.math : lrint;
         if (lrint(v) == v && lrint(v) >= short.min && lrint(v) <= short.max) {
@@ -504,7 +569,7 @@ private:
         }
         //FIXME: speed it up!
         foreach (immutable idx, Real vp; vpool) if (vp == v) { vpidx = cast(uint)idx; break; }
-      } else if (isString(v)) {
+      } else if (v.isString) {
         // string
         //FIXME: speed it up!
         auto sid = v.getStrId;
@@ -529,12 +594,12 @@ private:
     uint allocStrConst (string s, Loc loc) {
       if (s.length == 0) return 0;
       //FIXME: speed it up!
-      foreach (immutable idx, string vp; spool) {
-        if (vp == s) return cast(ushort)idx;
+      foreach (immutable idx, ref ds; spool) {
+        if (ds.val == s) return cast(ushort)idx;
       }
       auto sidx = cast(uint)spool.length;
       if (sidx >= 0xffffff) compileError(loc, "too many strings");
-      spool ~= s;
+      spool ~= Str(s, 0);
       return sidx;
     }
 
@@ -879,6 +944,10 @@ private:
       );
     }
 
+    if (auto sid = fn.name in scripts) {
+      if (scriptPCs[*sid] < 0) return; // can't override built-in function
+    }
+
     uint sid = sid4name(fn.name);
     //{ import std.stdio; writeln("compiling '", fn.name, "' (", sid, ")..."); }
     auto startpc = emit(Op.enter);
@@ -919,6 +988,27 @@ private:
       }
     }
     throw new Exception("fuuuuu");
+  }
+
+  public void opIndexAssign(DG) (DG dg, string name) if (isCallable!DG) {
+    assert(name.length > 0);
+    uint sid;
+    if (auto sptr = name in scripts) {
+      sid = *sptr;
+    } else {
+      sid = cast(uint)scriptPCs.length;
+      if (sid > 32767) assert(0, "too many scripts");
+      assert(scriptASTs.length == sid);
+      // reserve slots
+      scriptPCs ~= 0;
+      scriptASTs ~= null;
+      scriptNum2Name[sid] = name;
+      scripts[name] = sid;
+    }
+    auto pnum = cast(uint)prims.length;
+    assert(pnum);
+    scriptPCs[sid] = -cast(int)pnum;
+    prims ~= register(dg);
   }
 
   public Real exec(A...) (string name, A args) {
@@ -971,8 +1061,8 @@ private:
       "assert(!o0.isUndef && !o1.isUndef);\n"~
       "if (o0.isString) {\n"~
       "  if (!o1.isString) runtimeError(cast(uint)(cptr-code.ptr-1), `invalid type`);\n"~
-      "  string s0 = spool[o0.getStrId];\n"~
-      "  string s1 = spool[o1.getStrId];\n"~
+      "  string s0 = spool[o0.getStrId].val;\n"~
+      "  string s1 = spool[o1.getStrId].val;\n"~
       "  bp[dest] = (s0 "~op~" s1 ? 1 : 0);\n"~
       "} else {\n"~
       "  assert(o0.isReal);\n"~
@@ -988,8 +1078,8 @@ private:
       "assert(!o0.isUndef && !o1.isUndef);\n"~
       "if (o0.isString) {\n"~
       "  if (!o1.isString) runtimeError(cast(uint)(cptr-code.ptr-1), `invalid type`);\n"~
-      "  string s0 = spool[o0.getStrId];\n"~
-      "  string s1 = spool[o1.getStrId];\n"~
+      "  string s0 = spool[o0.getStrId].val;\n"~
+      "  string s1 = spool[o1.getStrId].val;\n"~
       "  bp[dest] = (s0.length "~op~" s1.length ? 1 : 0);\n"~
       "} else {\n"~
       "  assert(o0.isReal);\n"~
@@ -1038,7 +1128,7 @@ private:
           auto o0 = bp[opx.opOp0];
           assert(!o0.isUndef);
           if (o0.isString) {
-            auto s0 = spool[o0.getStrId];
+            auto s0 = spool[o0.getStrId].val;
             bp[dest] = (s0.length ? 0 : 1);
           } else {
             bp[dest] = (lrint(o0) ? 0 : 1);
@@ -1064,17 +1154,15 @@ private:
           assert(!o0.isUndef && !o1.isUndef);
           if (o0.isString) {
             if (!o1.isString) runtimeError(cast(uint)(cptr-code.ptr-1), "invalid type");
-            string s0 = spool[o0.getStrId];
-            string s1 = spool[o1.getStrId];
+            string s0 = spool[o0.getStrId].val;
+            string s1 = spool[o1.getStrId].val;
             //FIXME
             if (s0.length == 0) {
               bp[dest] = o1;
             } else if (s1.length == 0) {
               bp[dest] = o0;
             } else {
-              auto sidx = cast(uint)spool.length;
-              spool ~= s0~s1;
-              bp[dest] = buildStrId(sidx);
+              bp[dest] = buildStrId(newDynStr(s0~s1));
             }
           } else {
             assert(o0.isReal);
@@ -1141,9 +1229,17 @@ private:
           if (sid >= scriptPCs.length) runtimeError(cast(uint)(cptr-code.ptr-1), "invalid script id");
           pc = scriptPCs.ptr[sid];
           if (pc < 1 || pc >= code.length) {
-            string scname;
-            foreach (auto kv; scripts.byKeyValue) if (kv.value == sid) { scname = kv.key; break; }
-            runtimeError(cast(uint)(cptr-code.ptr-1), "trying to execute undefined script '", scname, "'");
+            if (pc&0x8000_0000) {
+              // this is primitive
+              uint pid = -cast(int)pc;
+              if (pid >= prims.length) assert(0, "wtf?!");
+              bp[opx.opDest] = prims.ptr[pid](cast(uint)(cptr-code.ptr-1), bp+opx.opOp0, opx.opOp1);
+              break;
+            } else {
+              string scname;
+              foreach (auto kv; scripts.byKeyValue) if (kv.value == sid) { scname = kv.key; break; }
+              runtimeError(cast(uint)(cptr-code.ptr-1), "trying to execute undefined script '", scname, "'");
+            }
           }
           debug(vm_exec) {
             import std.stdio : stderr;
@@ -1221,7 +1317,76 @@ private:
     }
   }
 
-
+private:
+  // create primitive delegate for D delegate/function
+  // D function can include special args like:
+  //   Real* -- bp
+  //   VM -- vm instance (should be at the end)
+  //   Real -- unmodified argument value
+  //   one or two args after VM: `self` and `other`
+  //   string, integer, float
+  //   no ref args are supported, sorry
+  private PrimDg register(DG) (DG dg) @trusted if (isCallable!DG) {
+    import core.stdc.math : lrint;
+    assert(dg !is null);
+    // build call thunk
+    return delegate (uint pc, Real* bp, ubyte argc) {
+      // prepare arguments
+      Parameters!DG arguments;
+      alias rt = ReturnType!dg;
+      // (VM self, Real* bp, ubyte argc)
+      static if (arguments.length == 3 &&
+                 is(typeof(arguments[0]) : VM) &&
+                 is(typeof(arguments[1]) == Real*) &&
+                 is(typeof(arguments[2]) : int))
+      {
+        static if (is(rt == void)) {
+          cast(void)dg(this, bp, cast(typeof(arguments[2]))argc);
+          return cast(Real)0;
+        } else {
+          return Value(this, dg(this, bp, cast(typeof(arguments[2]))argc));
+        }
+      } else {
+        foreach (immutable idx, ref arg; arguments) {
+          // is last argument suitable for `withobj`?
+          static if (is(typeof(arg) : VM)) {
+            arg = this;
+            static if (idx+1 < arguments.length) {
+              static assert(is(typeof(arguments[idx+1]) == Real), "invalid 'self' argument type");
+              arguments[idx+1] = bp[Slot.Self];
+              static if (idx+2 < arguments.length) {
+                static assert(is(typeof(arguments[idx+2]) == Real), "invalid 'other' argument type");
+                arguments[idx+2] = bp[Slot.Other];
+                static assert(idx+3 == arguments.length, "too many extra arguments");
+              }
+            }
+          } else {
+            static assert(idx < 16, "too many arguments required");
+            static if (is(typeof(arg) == const(char)[]) || is(typeof(arg) == string)) {
+              auto v = bp[Slot.Argument0+idx];
+              if (!v.isString) runtimeError(pc, "invalid argument type");
+              arg = getDynStr(v.getStrId);
+            } else static if (is(typeof(arg) == bool)) {
+              auto v = bp[Slot.Argument0+idx];
+                   if (v.isString) arg = (v.getStrId != 0);
+              else if (v.isReal) arg = (lrint(v) != 0);
+              else runtimeError(pc, "invalid argument type");
+            } else static if (is(typeof(arg) : long) || is(typeof(arg) : double)) {
+              auto v = bp[Slot.Argument0+idx];
+              if (!v.isReal) runtimeError(pc, "invalid D argument type");
+              arg = cast(typeof(arg))v;
+            }
+          }
+        }
+        static if (is(rt == void)) {
+          cast(void)dg(arguments);
+          return cast(Real)0;
+        } else {
+          return Value(this, dg(arguments));
+        }
+      }
+    };
+  }
 
 static:
   enum OpArgs {
