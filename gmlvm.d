@@ -302,6 +302,8 @@ public:
 
 private:
   void doCompileFunc (NodeFunc fn) {
+    import std.bitmanip; // BitArray
+
     int argvar (string s) {
       switch (s) {
         case "argument0": return 0;
@@ -473,6 +475,135 @@ private:
       }
       return VisitRes.Continue;
     });
+
+    void findUninitialized () {
+      bool[string] inited;
+      bool[string] used;
+
+      void processExpr (Node n, bool asAss=false) {
+        if (n is null) return;
+        visitNodes(n, (Node nn) {
+          if (auto n = cast(NodeBinaryAss)nn) {
+            if (cast(NodeId)n.el is null && cast(NodeDot)n.el is null && cast(NodeIndex)n.el is null) compileError(nn.loc, "assignment to rvalue");
+            processExpr(n.er); // it is calculated first
+            if (auto did = cast(NodeId)n.el) {
+              inited[did.name] = true;
+              used[did.name] = true;
+            } else {
+              processExpr(n.el, asAss:true);
+            }
+            return VisitRes.SkipChildren;
+          }
+          if (auto id = cast(NodeId)nn) {
+            if (argvar(id.name) < 0) {
+              if (!asAss && id.name !in inited) compileError(nn.loc, "assignment to uninitialized variable");
+            }
+            inited[id.name] = true;
+            used[id.name] = true;
+            return VisitRes.SkipChildren;
+          }
+          if (auto n = cast(NodeFCall)nn) {
+            if (cast(NodeId)n.fe is null) compileError(n.loc, "invalid function call");
+            if (n.args.length > 16) compileError(n.loc, "too many arguments in function call");
+            foreach (immutable idx, Node a; n.args) {
+              // no assignments allowed there
+              processExpr(a);
+            }
+            return VisitRes.SkipChildren;
+          }
+          return VisitRes.Continue;
+        });
+      }
+
+      void processStatement (Node nn) {
+        if (nn is null) return;
+        return selectNode!void(nn,
+          (NodeVarDecl n) {},
+          (NodeBlock n) {
+            foreach (Node st; n.stats) {
+              if (cast(NodeStatementBreakCont)st !is null) break;
+              processStatement(st);
+              if (cast(NodeReturn)st !is null) break;
+            }
+          },
+          (NodeStatementEmpty n) {},
+          (NodeStatementExpr n) { processExpr(n.e); },
+          (NodeReturn n) { processExpr(n.e); },
+          (NodeWith n) {
+            assert(0);
+          },
+          (NodeIf n) {
+            processExpr(n.ec);
+            auto before = inited.dup;
+            processStatement(n.et);
+            auto tset = inited.dup;
+            inited = before.dup;
+            processStatement(n.ef);
+            // now copy to `before` all items that are set both in `tset` and in `inited`
+            foreach (string name; inited.byKey) {
+              if (name in tset) before[name] = true;
+            }
+            inited = before;
+          },
+          (NodeStatementBreakCont n) {},
+          (NodeFor n) {
+            processExpr(n.einit);
+            // "next" and "cond" can't contain assignments, so it's safe here
+            processExpr(n.econd);
+            processExpr(n.enext);
+            // yet body can be executed zero times, so...
+            auto before = inited.dup;
+            processStatement(n.ebody);
+            inited = before;
+          },
+          (NodeWhile n) {
+            // "cond" can't contain assignments, so it's safe here
+            processExpr(n.econd);
+            // yet body can be executed zero times, so...
+            auto before = inited.dup;
+            processStatement(n.ebody);
+            inited = before;
+          },
+          (NodeDoUntil n) {
+            // "cond" can't contain assignments, so it's safe here
+            processExpr(n.econd);
+            // body is guaranteed to execute at least one time
+            processStatement(n.ebody);
+          },
+          (NodeRepeat n) {
+            // "count" can't contain assignments, so it's safe here
+            processExpr(n.ecount);
+            // yet body can be executed zero times, so...
+            auto before = inited.dup;
+            processStatement(n.ebody);
+            inited = before;
+          },
+          (NodeSwitch n) {
+            /*
+            if (auto r = visitNodes(n.e, dg)) return r;
+            foreach (ref ci; n.cases) {
+              if (auto r = visitNodes(ci.e, dg)) return r;
+              if (auto r = visitNodes(ci.st, dg)) return r;
+            }
+            return null;
+            */
+            assert(0);
+          },
+          () { assert(0, "unimplemented node: "~typeid(nn).name); },
+        );
+      }
+
+      processStatement(fn.ebody);
+      // now remove unused locals
+      foreach (string name; locals.keys) {
+        if (name !in used) {
+          { import std.stdio; writeln("removing unused local '", name, "'"); }
+          locals.remove(name);
+        }
+      }
+    }
+
+    findUninitialized();
 
     /* here we will do very simple analysis for code like
      *   var m, n;

@@ -24,11 +24,11 @@ import gmlparser.ast;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-enum VisitRes { Continue, Stop, NoChildren }
+enum VisitRes { Continue, Stop, SkipChildren }
 
-private final class NodeNoChildren : Node {}
-private __gshared NodeNoChildren nnc;
-shared static this () { nnc = new NodeNoChildren(); }
+private final class NodeSkipChildren : Node {}
+private __gshared NodeSkipChildren nnc;
+shared static this () { nnc = new NodeSkipChildren(); }
 
 
 Node visitNodes (Node nn, VisitRes delegate (Node n) dg) {
