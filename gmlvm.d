@@ -379,7 +379,7 @@ private:
       return res;
     }
 
-    uint emitJumpTo (Op op, uint addr) {
+    uint emitJumpTo (uint addr, Op op=Op.jump) {
       assert(addr <= 0xffffff);
       auto res = cast(uint)code.length;
       code ~= cast(uint)op|(addr<<8);
@@ -921,7 +921,6 @@ private:
     uint breakChain; // current jump chain for `break`
     uint contChain; // current jump chain for `continue`
     bool contChainIsAddr; // is `contChain` an address, not a chain?
-    bool inSwitch; // are we in `switch` now?
 
     void compile (Node nn) {
       assert(nn !is null);
@@ -970,7 +969,7 @@ private:
         },
         (NodeStatementContinue n) {
           if (contChainIsAddr) {
-            emitJumpTo(Op.jump, contChain);
+            emitJumpTo(contChain);
           } else {
             contChain = emitJumpChain(contChain);
           }
@@ -1002,7 +1001,7 @@ private:
           auto dest = compileExpr(n.econd);
           freeSlot(dest); // yep, right here
           emit(Op.xfalse, dest); // skip jump on false
-          emitJumpTo(Op.jump, stpc);
+          emitJumpTo(stpc);
           // "break" is here
           fixJumpChain(breakChain, pc);
         },
@@ -1025,7 +1024,7 @@ private:
           // body
           compile(n.ebody);
           // and again
-          emitJumpTo(Op.jump, contChain);
+          emitJumpTo(contChain);
           // "break" is here
           fixJumpChain(breakChain, pc);
         },
@@ -1050,7 +1049,7 @@ private:
           freeSlot(dest); // yep, right here
           emit(Op.xfalse, dest); // skip jump on false
           // and again
-          emitJumpTo(Op.jump, stpc);
+          emitJumpTo(stpc);
           // "break" is here
           fixJumpChain(breakChain, pc);
         },
@@ -1081,7 +1080,7 @@ private:
           // body
           compile(n.ebody);
           // and again
-          emitJumpTo(Op.jump, contChain);
+          emitJumpTo(contChain);
           // "break" is here
           fixJumpChain(breakChain, pc);
           // free used slots
@@ -1089,15 +1088,63 @@ private:
           freeSlot(cnt);
         },
         (NodeSwitch n) {
-          /*
-          if (auto r = visitNodes(n.e, dg)) return r;
-          foreach (ref ci; n.cases) {
-            if (auto r = visitNodes(ci.e, dg)) return r;
-            if (auto r = visitNodes(ci.st, dg)) return r;
+          // switch expression
+          auto expr = compileExpr(n.e);
+          if (n.cases.length) {
+            // has some cases
+            uint defaultBodyAddr = 0; // address of "default" node body (even if it is empty)
+            uint lastFalltrhuJump = 0; // this is the address of the Op.jump at the end of the previous case node
+            uint lastCaseSkipJumpAddr = 0; // this is the address of the Op.jump at the failed condition of the previous case node
+            // new "break" chain
+            auto obc = breakChain;
+            scope(exit) breakChain = obc;
+            breakChain = 0;
+            // now generate code for case nodes, skipping "default" by the way
+            foreach (immutable idx, ref ci; n.cases) {
+              uint nodeSkipChain = 0;
+              // check condition
+              if (ci.e !is null) {
+                // jump here from the last failed condition
+                fixJumpChain(lastCaseSkipJumpAddr, pc);
+                auto cond = compileExpr(ci.e);
+                // trick: reuse "cond" slot
+                freeSlot(cond);
+                emit(Op.eq, cond, cond, expr);
+                emit(Op.xtrue, cond);
+                // new skip chain
+                lastCaseSkipJumpAddr = emitJumpChain(0);
+              } else {
+                // this is default node, jump over it
+                nodeSkipChain = emitJumpChain(0);
+                // and save info
+                defaultBodyAddr = pc;
+              }
+              // fix fallthru jump
+              fixJumpChain(lastFalltrhuJump, pc);
+              // the body is here
+              compile(ci.st);
+              // new fallthru chain
+              lastFalltrhuJump = (idx < n.cases.length-1 ? emitJumpChain(0) : 0);
+              // fix "default skip" chain
+              fixJumpChain(nodeSkipChain, pc);
+            }
+            // we can free expression slot right here
+            freeSlot(expr);
+            // do we have default node?
+            if (defaultBodyAddr) {
+              // jump there from the last failed condition
+              fixJumpChain(lastCaseSkipJumpAddr, defaultBodyAddr);
+            } else {
+              // jump here from the last failed condition
+              fixJumpChain(lastCaseSkipJumpAddr, pc);
+            }
+            // fix last fallthru jump
+            fixJumpChain(lastFalltrhuJump, pc);
+            // fix "break" chain
+            fixJumpChain(breakChain, pc);
+          } else {
+            freeSlot(expr);
           }
-          return null;
-          */
-          assert(0);
         },
         () { assert(0, "unimplemented node: "~typeid(nn).name); },
       );

@@ -208,10 +208,10 @@ final class Parser {
   mixin BuildExprBinOp!("Mul",    "Unary",   "Mul", "Div", "RDiv", "Mod");
   mixin BuildExprBinOp!("Add",    "Mul",     "Add", "Sub"); // binop `~` is here too, but we don't have it
   mixin BuildExprBinOp!("Shift",  "Add",     "LShift", "RShift");
-  mixin BuildExprBinOp!("Cmp",    "Shift",   "Less", "Great", "Equ", "NotEqu", "LessEqu", "GreatEqu", "Ass"); // `a is b`, `a in b` are here too
-  mixin BuildExprBinOp!("BitAnd", "Cmp",     "BitAnd");
+  mixin BuildExprBinOp!("BitAnd", "Shift",     "BitAnd");
   mixin BuildExprBinOp!("BitOr",  "BitAnd",  "BitOr", "BitXor");
-  mixin BuildExprBinOp!("LogAnd", "BitOr",   "LogAnd", "And");
+  mixin BuildExprBinOp!("Cmp",    "BitOr",   "Less", "Great", "Equ", "NotEqu", "LessEqu", "GreatEqu", "Ass"); // `a is b`, `a in b` are here too
+  mixin BuildExprBinOp!("LogAnd", "Cmp",   "LogAnd", "And");
   mixin BuildExprBinOp!("LogOr",  "LogAnd",  "LogOr", "LogXor", "Or", "Xor");
 
   Node parseExpr () {
@@ -410,9 +410,14 @@ final class Parser {
     lex.expect(Keyword.LCurly);
     // parse case nodes; i won't support insane things like Duff's device here
     while (lex != Keyword.RCurly) {
+      auto cl = lex.loc;
       Node e;
-      if (lex.eatKw(Keyword.Default)) {
-        // do nothing here
+      if (lex.isKw(Keyword.Default)) {
+        // check for duplicate `default`
+        foreach (ref cc; sw.cases) {
+          if (cc.e is null) error(lex.loc, "duplicate `default`; previous was at "~cc.loc.toStringNoFile);
+        }
+        lex.popFront(); // eat it
       } else if (lex.eatKw(Keyword.Case)) {
         e = parseExpr();
       } else {
@@ -436,9 +441,9 @@ final class Parser {
         while (blk.stats.length == 1) {
           if (auto b = cast(NodeBlock)blk.stats[0]) blk = b; else break;
         }
-        sw.appendCase(e, blk);
+        sw.appendCase(cl, e, blk);
       } else {
-        sw.appendCase(e, null);
+        sw.appendCase(cl, e, null);
       }
     }
     lex.expect(Keyword.RCurly);

@@ -500,6 +500,7 @@ class NodeRepeat : NodeStatement {
 // `switch` operator
 class NodeSwitch : NodeStatement {
   static struct Case {
+    Loc loc;
     Node e; // condition; `null` means "default"
     NodeBlock st; // can be `null`
   }
@@ -509,13 +510,8 @@ class NodeSwitch : NodeStatement {
   this () {}
   this (Loc aloc) { super(aloc); }
 
-  void appendCase (Node ae, NodeBlock ast) {
-    if (ae is null) {
-      foreach (ref cc; cases) {
-        if (cc.e is null) throw new ErrorAt(loc, "duplicate `default`");
-      }
-    }
-    cases ~= Case(ae, ast);
+  void appendCase (Loc aloc, Node ae, NodeBlock ast) {
+    cases ~= Case(aloc, ae, ast);
   }
 
   override string toStringInd (int indent) const {
