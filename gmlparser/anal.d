@@ -619,7 +619,9 @@ void analUninited (NodeFunc fn) {
         }
         if (auto id = cast(NodeId)nn) {
           if (argvar(id.name) < 0) {
-            if (!asAss && id.name !in inited) warning(nn.loc, "assignment to uninitialized variable");
+            if (!asAss && id.name in locals && id.name !in inited) {
+              warning(nn.loc, "using uninitialized variable; declared at ", vdecls[id.name].toStringNoFile);
+            }
           }
           inited[id.name] = true;
           used[id.name] = true;
@@ -653,7 +655,11 @@ void analUninited (NodeFunc fn) {
         (NodeStatementExpr n) { processExpr(n.e); },
         (NodeReturn n) { processExpr(n.e); },
         (NodeWith n) {
-          assert(0);
+          processExpr(n.e); // can't contain assignments
+          // body can be executed zero times, so...
+          auto before = inited.dup;
+          processStatement(n.ebody);
+          inited = before;
         },
         (NodeIf n) {
           processExpr(n.ec);
@@ -702,15 +708,18 @@ void analUninited (NodeFunc fn) {
           inited = before;
         },
         (NodeSwitch n) {
-          /*
-          if (auto r = visitNodes(n.e, dg)) return r;
+          // "expr" can't contain assignments, so it's safe here
+          processExpr(n.e);
+          auto before = inited.dup;
           foreach (ref ci; n.cases) {
-            if (auto r = visitNodes(ci.e, dg)) return r;
-            if (auto r = visitNodes(ci.st, dg)) return r;
+            processExpr(ci.e); // can't contain assignments
+            // and this one can
+            if (ci.st !is null) {
+              inited = before.dup;
+              processStatement(ci.st);
+            }
           }
-          return null;
-          */
-          assert(0);
+          inited = before;
         },
         () { assert(0, "unimplemented node: "~typeid(nn).name); },
       );

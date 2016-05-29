@@ -55,6 +55,7 @@ NodeFunc parseScript (string code, string scname, bool warnings=true) {
   try {
     auto fn = parser.parseFunctionBody(scname);
     fn.pp = parser; // store parsed source
+    return fn;
   } catch (ErrorAt e) {
     import std.stdio;
     writeln("ERROR at ", e.loc, ": ", e.msg);

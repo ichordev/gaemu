@@ -484,7 +484,10 @@ private:
         if (n is null) return;
         visitNodes(n, (Node nn) {
           if (auto n = cast(NodeBinaryAss)nn) {
-            if (cast(NodeId)n.el is null && cast(NodeDot)n.el is null && cast(NodeIndex)n.el is null) compileError(nn.loc, "assignment to rvalue");
+            if (cast(NodeId)n.el is null && cast(NodeDot)n.el is null && cast(NodeIndex)n.el is null) {
+              compileError(nn.loc, "assignment to rvalue");
+              return VisitRes.SkipChildren;
+            }
             processExpr(n.er); // it is calculated first
             if (auto did = cast(NodeId)n.el) {
               inited[did.name] = true;
@@ -495,8 +498,10 @@ private:
             return VisitRes.SkipChildren;
           }
           if (auto id = cast(NodeId)nn) {
-            if (argvar(id.name) < 0 && id.name != "self" && id.name != "other") {
-              if (!asAss && id.name !in inited) compileError(nn.loc, "assignment to uninitialized variable");
+            if (argvar(id.name) < 0) {
+              if (!asAss && id.name in locals && id.name !in inited) {
+                compileError(nn.loc, "using uninitialized variable; declared at ", vdecls[id.name].toStringNoFile);
+              }
             }
             inited[id.name] = true;
             used[id.name] = true;
@@ -530,7 +535,11 @@ private:
           (NodeStatementExpr n) { processExpr(n.e); },
           (NodeReturn n) { processExpr(n.e); },
           (NodeWith n) {
-            assert(0);
+            processExpr(n.e); // can't contain assignments
+            // body can be executed zero times, so...
+            auto before = inited.dup;
+            processStatement(n.ebody);
+            inited = before;
           },
           (NodeIf n) {
             processExpr(n.ec);
@@ -579,28 +588,38 @@ private:
             inited = before;
           },
           (NodeSwitch n) {
-            /*
-            if (auto r = visitNodes(n.e, dg)) return r;
+            // "expr" can't contain assignments, so it's safe here
+            processExpr(n.e);
+            auto before = inited.dup;
             foreach (ref ci; n.cases) {
-              if (auto r = visitNodes(ci.e, dg)) return r;
-              if (auto r = visitNodes(ci.st, dg)) return r;
+              processExpr(ci.e); // can't contain assignments
+              // and this one can
+              if (ci.st !is null) {
+                inited = before.dup;
+                processStatement(ci.st);
+              }
             }
-            return null;
-            */
-            assert(0);
+            inited = before;
           },
           () { assert(0, "unimplemented node: "~typeid(nn).name); },
         );
       }
 
       processStatement(fn.ebody);
-      // now remove unused locals
+
+      // now show (and remove) unused locals
+      //static struct Info { Loc loc; string name; }
+      //Info[] unusedLocs;
       foreach (string name; locals.keys) {
         if (name !in used) {
           { import std.stdio; writeln("removing unused local '", name, "'"); }
+          //unusedLocs ~= Info(vdecls[name], name);
           locals.remove(name);
         }
       }
+      //import std.algorithm : sort;
+      //unusedLocs.sort!((ref a, ref b) { if (a.loc.line < b.loc.line) return true; if (a.loc.line > b.loc.line) return false; return (a.loc.col < b.loc.col); });
+      //foreach (ref nfo; unusedLocs) compileError(nfo.loc, "unused local '", nfo.name, "'");
     }
 
     findUninitialized();
