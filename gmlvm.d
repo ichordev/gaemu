@@ -118,23 +118,18 @@ enum Op {
 
   ret, // dest is retvalue; it is copied to reg0; other stack items are discarded
 
-  //as we are using refloads only in the last stage of assignment, they can create values
-  lref, // load slot reference to dest
-  oref, // load object reference to dest; op0: int reg (obj id; -666: global object)
-  fref, // load field reference; op0: varref; op1: int reg (field id); can't create fields
-  fcrf, // load field reference; op0: varref; op1: int reg (field id); can create field
-  iref, // load indexed reference; op0: varref; op1: int reg (index)
-  mref, // load indexed reference; op0: varref; op1: int reg (first index); (op1+1): int reg (second index)
+  // as we are using refloads only in the last stage of assignment, they can create values
+  lref, // load slot reference to dest; op0: slot number
+  fref, // load field reference; op0: obj id; op1: int! reg (field id); can create fields
+  fval, // load field value; op0: obj id; op1: int! reg (field id)
+  i1ref, // load indexed reference; op0: varref; op1: index; can create arrays
+  i2ref, // load indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
+  i1val, // load indexed value; op0: varref; op1: index
+  i2val, // load indexed value; op0: varref; op1: first index; (op1+1): second index
 
-  rload, // load from op0-varref to dest
   rstore, // store to op0-varref from op1
 
-  oload, // load object field to dest; op0: int reg (obj id; -666: global object); op1: int reg (field id)
-  iload, // load indexed (as iref)
-  mload, // load indexed (as mref)
-
-
-  //`with` is done by copying `self` to another reg, execute the code and restore `self`
+  // `with` is done by copying `self` to another reg, execute the code and restore `self`
 
   siter, // start instance iterator; dest: iterid; op0: objid or instid
          // this is special: it will skip next instruction if iteration has at least one item
@@ -196,6 +191,15 @@ private:
   uint spoolFree = 0x8000_0000; // none
   Real[] globals;
   uint[string] fields; // known fields and their offsets in object (and in globals too)
+
+private:
+  short fieldIdByName (string name) {
+    if (auto fpi = name in fields) return cast(short)*fpi;
+    auto fid = cast(uint)fields.length;
+    if (fid > short.max) assert(0, "too many fields");
+    fields[name] = fid;
+    return cast(short)fid;
+  }
 
 public:
   // has rc of 1
@@ -422,6 +426,21 @@ private:
         if (!slots[idx]) {
           if (idx > maxUsedSlot) maxUsedSlot = cast(uint)idx;
           slots[idx] = true;
+          return cast(ubyte)idx;
+        }
+      }
+      compileError(loc, "out of free slots");
+      assert(0);
+    }
+
+    ubyte allocSlots (Loc loc, int count) {
+      assert(count > 0 && count < slots.length);
+      foreach (immutable idx; firstFreeSlot..slots.length-count) {
+        bool ok = true;
+        foreach (immutable c; idx..idx+count) if (slots[c]) { ok = false; break; }
+        if (ok) {
+          if (idx+count-1 > maxUsedSlot) maxUsedSlot = cast(uint)idx+count-1;
+          foreach (immutable c; idx..idx+count) slots[c] = true;
           return cast(ubyte)idx;
         }
       }
@@ -888,31 +907,105 @@ private:
             }
           }
           if (wantref) {
-            auto vsl = varSlot(n.name);
-            assert(vsl >= 0);
+            // load reference
             auto dest = allocSlot(n.loc, ddest);
-            emit(Op.lref, dest, cast(ubyte)vsl);
+            auto vsl = varSlot(n.name);
+            if (vsl >= 0) {
+              // this is local variable
+              emit(Op.lref, dest, cast(ubyte)vsl);
+            } else {
+              // this is `self` field
+              auto fid = allocSlot(n.loc);
+              emit2Bytes(Op.ilit, fid, cast(short)fieldIdByName(n.name));
+              freeSlot(fid);
+              emit(Op.fref, dest, Slot.Self, fid);
+            }
             return dest;
           } else {
+            // load value
             auto vsl = varSlot(n.name);
-            assert(vsl >= 0);
-            if (ddest < 0) return vsl; // just use this slot directly
-            auto dest = allocSlot(n.loc, ddest);
-            if (dest == vsl) return dest;
-            emit(Op.copy, dest, cast(ubyte)vsl, 1);
-            return dest;
+            if (vsl >= 0) {
+              // this is local variable
+              if (ddest < 0) return vsl; // just use this slot directly
+              auto dest = allocSlot(n.loc, ddest);
+              if (dest == vsl) return dest;
+              emit(Op.copy, dest, cast(ubyte)vsl, 1);
+              return dest;
+            } else {
+              // this is `self` field
+              auto dest = allocSlot(n.loc, ddest);
+              auto fid = allocSlot(n.loc);
+              emit2Bytes(Op.ilit, fid, cast(short)fieldIdByName(n.name));
+              freeSlot(fid);
+              emit(Op.fval, dest, Slot.Self, fid);
+              return dest;
+            }
           }
           assert(0);
-          //return 0;
         },
         (NodeDot n) {
-          assert(0);
+          // field access
+          auto aop = (wantref ? Op.fref : Op.fval);
+          auto dest = allocSlot(n.loc, ddest);
+          if (auto oid = cast(NodeId)n.e) {
+            // we know object name directly
+            if (oid.name == "self" || oid.name == "other" || oid.name == "global") {
+              // well-known name
+              auto fid = allocSlot(n.loc);
+              emit2Bytes(Op.ilit, fid, cast(short)fieldIdByName(n.name));
+              if (oid.name == "global") {
+                auto oids = allocSlot(n.loc);
+                emit2Bytes(Op.ilit, oids, -666);
+                freeSlot(oids);
+                emit(aop, dest, oids, fid);
+              } else {
+                emit(aop, dest, (oid.name == "self" ? Slot.Self : Slot.Other), fid);
+              }
+              freeSlot(fid);
+              return dest;
+            }
+          }
+          // this is some complex expression
+          auto fid = allocSlot(n.loc);
+          emit2Bytes(Op.ilit, fid, cast(short)fieldIdByName(n.name));
+          auto oids = compileExpr(n.e);
+          freeSlot(oids);
+          emit(aop, dest, oids, fid);
+          return dest;
         },
         (NodeIndex n) {
-          //if (auto r = visitNodes(n.ei0, dg)) return r;
-          //if (auto r = visitNodes(n.ei1, dg)) return r;
-          //return visitNodes(n.e, dg);
-          assert(0);
+          assert(n.ei0 !is null);
+          auto dest = allocSlot(n.loc, ddest);
+          if (n.ei1 is null) {
+            // one index
+            if (auto id = cast(NodeId)n.e) {
+              auto vid = varSlot(id.name);
+              if (vid >= 0) {
+                // this is local variable
+                compileError(n.loc, "indexing locals is not supported yet");
+                assert(0);
+              }
+            }
+            // not a local
+            auto i0 = compileExpr(n.ei0);
+            auto refs = compileExpr(n.e, wantref:true);
+            emit((wantref ? Op.i1ref : Op.i1val), dest, refs, i0);
+            freeSlot(refs);
+            freeSlot(i0);
+          } else {
+            // two indexes
+            auto islots = allocSlots(n.loc, 2);
+            auto i0 = compileExpr(n.ei0, islots);
+            assert(i0 == islots);
+            auto i1 = compileExpr(n.ei1, islots+1);
+            assert(i0 == islots+1);
+            auto refs = compileExpr(n.e, wantref:true);
+            emit((wantref ? Op.i2ref : Op.i2val), dest, refs, islots);
+            freeSlot(refs);
+            freeSlot(i0);
+            freeSlot(i1);
+          }
+          return dest;
         },
         () { assert(0, "unimplemented node: "~typeid(nn).name); },
       );
@@ -1505,13 +1598,19 @@ private:
         case Op.lref: // load slot reference to dest
           *cast(int*)bp[opx.opDest] = opx.opOp0;
           break;
-        //case Op.oref: // load object reference to dest; op0: int reg (obj id; -666: global object)
-        //case Op.fref: // load field reference; op0: varref; op1: int reg (field id); can't create fields
-        //case Op.fcrf: // load field reference; op0: varref; op1: int reg (field id); can create field
-        //case Op.iref: // load indexed reference; op0: varref; op1: int reg (index)
-        //case Op.mref: // load indexed reference; op0: varref; op1: int reg (first index); (op1+1): int reg (second index)
+        case Op.fref: // load field reference; op0: obj id; op1: int! reg (field id); can create fields
+          assert(0);
+        case Op.fval: // load field value; op0: obj id; op1: int! reg (field id)
+          assert(0);
+        case Op.i1ref: // load indexed reference; op0: varref; op1: index; can create arrays
+          assert(0);
+        case Op.i2ref: // load indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
+          assert(0);
+        case Op.i1val: // load indexed value; op0: varref; op1: index
+          assert(0);
+        case Op.i2val: // load indexed value; op0: varref; op1: first index; (op1+1): second index
+          assert(0);
 
-        //case Op.rload: // load from op0-varref to dest
         case Op.rstore: // store to op0-varref from op1
           auto x = *cast(int*)bp[opx.opOp0];
           assert(x >= 0 && x <= 255);
@@ -1656,19 +1755,14 @@ static:
       Op.ret: Dest,
 
       Op.lref: DestOp0,
-      Op.oref: DestOp0,
       Op.fref: DestOp0Op1,
-      Op.fcrf: DestOp0Op1,
-      Op.iref: DestOp0Op1,
-      Op.mref: DestOp0Op1,
+      Op.fval: DestOp0Op1,
+      Op.i1ref: DestOp0Op1,
+      Op.i1val: DestOp0Op1,
+      Op.i2ref: DestOp0Op1,
+      Op.i2val: DestOp0Op1,
 
-      Op.rload: DestOp0,
       Op.rstore: DestOp0,
-
-      Op.oload: DestOp0Op1,
-      Op.iload: DestOp0Op1,
-      Op.mload: DestOp0Op1,
-
 
       Op.siter: DestOp0,
       Op.niter: DestJump,
