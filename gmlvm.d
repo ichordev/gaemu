@@ -835,6 +835,8 @@ private:
           contChainIsAddr = false;
           breakChain = 0; // start new chain
           auto stpc = pc;
+          // increment
+          freeSlot(compileExpr(n.enext));
           // body
           compile(n.ebody);
           // fix "continue"
@@ -842,7 +844,7 @@ private:
           // condition
           auto dest = compileExpr(n.econd);
           freeSlot(dest); // yep, right here
-          emit(Op.xfalse); // skip jump on false
+          emit(Op.xfalse, dest); // skip jump on false
           emitJumpTo(Op.jump, stpc);
           // "break" is here
           fixJumpChain(breakChain, pc);
@@ -861,7 +863,7 @@ private:
           // condition
           auto dest = compileExpr(n.econd);
           freeSlot(dest); // yep, right here
-          emit(Op.xfalse); // skip jump on false
+          emit(Op.xfalse, dest); // skip jump on false
           breakChain = emitJumpChain(breakChain); // get out of here
           // body
           compile(n.ebody);
@@ -889,7 +891,7 @@ private:
           // condition
           auto dest = compileExpr(n.econd);
           freeSlot(dest); // yep, right here
-          emit(Op.xfalse); // skip jump on false
+          emit(Op.xfalse, dest); // skip jump on false
           // and again
           emitJumpTo(Op.jump, stpc);
           // "break" is here
@@ -949,7 +951,7 @@ private:
     }
 
     uint sid = sid4name(fn.name);
-    //{ import std.stdio; writeln("compiling '", fn.name, "' (", sid, ")..."); }
+    /*debug(vm_exec)*/ { import std.stdio; writeln("compiling '", fn.name, "' (", sid, ")..."); }
     auto startpc = emit(Op.enter);
     fn.pcs = pc;
     compile(fn.ebody);
