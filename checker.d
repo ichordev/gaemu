@@ -90,6 +90,7 @@ void main (string[] args) {
       }
       if (warnWith) analWith(fn);
       if (warnAss) analAss(fn);
+      analUninited(fn);
     }
   }
 }

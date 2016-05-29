@@ -495,7 +495,7 @@ private:
             return VisitRes.SkipChildren;
           }
           if (auto id = cast(NodeId)nn) {
-            if (argvar(id.name) < 0) {
+            if (argvar(id.name) < 0 && id.name != "self" && id.name != "other") {
               if (!asAss && id.name !in inited) compileError(nn.loc, "assignment to uninitialized variable");
             }
             inited[id.name] = true;
