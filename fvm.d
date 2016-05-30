@@ -13,7 +13,7 @@ void registerPrims (VM vm) {
     import std.stdio : stdout;
     foreach (immutable idx; 0..argc) {
       auto v = bp[vm.Slot.Argument0+idx];
-      if (v.isString) stdout.write(vm.getDynStr(v.getStrId)); else stdout.write(v);
+      if (v.isString) stdout.write(getDynStr(v.getStrId)); else stdout.write(v);
     }
     stdout.flush();
   };
@@ -21,7 +21,7 @@ void registerPrims (VM vm) {
     import std.stdio : stdout;
     foreach (immutable idx; 0..argc) {
       auto v = bp[vm.Slot.Argument0+idx];
-      if (v.isString) stdout.write(vm.getDynStr(v.getStrId)); else stdout.write(v);
+      if (v.isString) stdout.write(getDynStr(v.getStrId)); else stdout.write(v);
     }
     stdout.writeln;
     stdout.flush();

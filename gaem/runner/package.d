@@ -17,4 +17,7 @@
  */
 module gaem.runner;
 
+public import gaem.runner.strpool;
+public import gaem.runner.value;
 public import gaem.runner.vm;
+public import gaem.runner.compiler;
