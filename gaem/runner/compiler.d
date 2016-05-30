@@ -25,6 +25,7 @@ import gaem.runner.strpool;
 import gaem.runner.value;
 import gaem.runner.opcodes;
 import gaem.runner.vm;
+import gaem.runner.objects;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
@@ -137,6 +138,10 @@ void doCompileFunc (VM vm, NodeFunc fn) {
       vm.code[chain] = (vm.code[chain]&0xff)|(addr<<8);
       chain = nc;
     }
+  }
+
+  void opReplace (uint pc, Op op, ubyte dest) {
+    vm.code[pc] = (vm.code[pc]&0xff_ff_00_00)|(dest<<8)|cast(ubyte)op;
   }
 
   assert(fn !is null);
@@ -555,19 +560,38 @@ void doCompileFunc (VM vm, NodeFunc fn) {
       (NodeUnaryNeg n) => doUnOp(Op.neg, n),
       (NodeUnaryBitNeg n) => doUnOp(Op.bneg, n),
       (NodeBinaryAss n) {
+        // assignment
         if (cast(NodeId)n.el is null && cast(NodeDot)n.el is null && cast(NodeIndex)n.el is null) compileError(n.loc, "assignment to rvalue");
         if (auto did = cast(NodeId)n.el) {
+          // try to put value directly to variable slot
           auto vdst = varSlot(did.name);
-          assert(vdst >= 0);
-          auto dest = compileExpr(n.er, ddest:vdst);
-          freeSlot(dest);
-        } else {
-          auto src = compileExpr(n.er);
-          auto dest = compileExpr(n.el, wantref:true);
-          emit(Op.rstore, dest, src);
-          freeSlot(src);
-          freeSlot(dest);
+          if (vdst >= 0) {
+            auto dest = compileExpr(n.er, ddest:vdst);
+            freeSlot(dest);
+            return 0;
+          }
         }
+        // normal assignment
+        auto src = compileExpr(n.er);
+        auto dest = compileExpr(n.el, wantref:true);
+        //emit(Op.rstore, dest, src);
+        switch (vm.code[pc-1].opCode) {
+          case Op.lref: // load slot reference to dest; op0: slot number
+            opReplace(pc-1, Op.lstore, src); // store value *from* dest into local slot; op0: slot number
+            break;
+          case Op.fref: // load field reference; op0: obj id; op1: int! reg (field id); can create fields
+            opReplace(pc-1, Op.fstore, src); // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
+            break;
+          case Op.i1ref: // load indexed reference; op0: varref; op1: index; can create arrays
+            opReplace(pc-1, Op.i1store, src); // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays
+            break;
+          case Op.i2ref: // load indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
+            opReplace(pc-1, Op.i2store, src); // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
+            break;
+          default: assert(0, "internal compiler error");
+        }
+        freeSlot(src);
+        freeSlot(dest);
         return 0;
       },
       (NodeBinaryAdd n) => doBinOp(Op.add, n),
@@ -620,6 +644,7 @@ void doCompileFunc (VM vm, NodeFunc fn) {
         emit(Op.call, dest, fcs, cast(ubyte)n.args.length);
         return dest;
       },
+      // variable access
       (NodeId n) {
         // keep track of maximum argument we've seen
         if (maxArgUsed < 15) {
@@ -637,7 +662,7 @@ void doCompileFunc (VM vm, NodeFunc fn) {
           } else {
             // this is `self` field
             auto fid = allocSlot(n.loc);
-            emit2Bytes(Op.ilit, fid, cast(short)vm.allocateFieldId(n.name));
+            emit2Bytes(Op.ilit, fid, cast(short)allocateFieldId(n.name));
             freeSlot(fid);
             emit(Op.fref, dest, VM.Slot.Self, fid);
           }
@@ -656,7 +681,7 @@ void doCompileFunc (VM vm, NodeFunc fn) {
             // this is `self` field
             auto dest = allocSlot(n.loc, ddest);
             auto fid = allocSlot(n.loc);
-            emit2Bytes(Op.ilit, fid, cast(short)vm.allocateFieldId(n.name));
+            emit2Bytes(Op.ilit, fid, cast(short)allocateFieldId(n.name));
             freeSlot(fid);
             emit(Op.fval, dest, VM.Slot.Self, fid);
             return dest;
@@ -673,7 +698,7 @@ void doCompileFunc (VM vm, NodeFunc fn) {
           if (oid.name == "self" || oid.name == "other" || oid.name == "global") {
             // well-known name
             auto fid = allocSlot(n.loc);
-            emit2Bytes(Op.ilit, fid, cast(short)vm.allocateFieldId(n.name));
+            emit2Bytes(Op.ilit, fid, cast(short)allocateFieldId(n.name));
             if (oid.name == "global") {
               auto oids = allocSlot(n.loc);
               emit2Bytes(Op.ilit, oids, -666);
@@ -688,7 +713,7 @@ void doCompileFunc (VM vm, NodeFunc fn) {
         }
         // this is some complex expression
         auto fid = allocSlot(n.loc);
-        emit2Bytes(Op.ilit, fid, cast(short)vm.allocateFieldId(n.name));
+        emit2Bytes(Op.ilit, fid, cast(short)allocateFieldId(n.name));
         auto oids = compileExpr(n.e);
         freeSlot(oids);
         emit(aop, dest, oids, fid);

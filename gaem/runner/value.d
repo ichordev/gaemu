@@ -83,7 +83,7 @@ Real buildStrId (int id) nothrow @safe @nogc {
 }
 
 
-Real value () nothrow @safe @nogc { pragma(inline, true); return undefValue(); }
+Real Value () nothrow @safe @nogc { pragma(inline, true); return undefValue(); }
 
 Real Value(T) (T v) {
   pragma(inline, true);

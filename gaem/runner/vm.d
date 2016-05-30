@@ -64,16 +64,6 @@ package(gaem.runner):
   // fixuper will not remove fixup chains, so we can replace script with new one
   Real[] vpool; // pool of values
   Real[] globals;
-  uint[string] fields; // known fields and their offsets in object (and in globals too)
-
-private:
-  package(gaem.runner) short allocateFieldId (string name) {
-    if (auto fpi = name in fields) return cast(short)*fpi;
-    auto fid = cast(uint)fields.length;
-    if (fid > short.max) assert(0, "too many fields");
-    fields[name] = fid;
-    return cast(short)fid;
-  }
 
 public:
   this () {
@@ -419,6 +409,7 @@ private:
           break;
 
         //as we are using refloads only in the last stage of assignment, they can create values
+        /*
         case Op.lref: // load slot reference to dest
           *cast(int*)bp[opx.opDest] = opx.opOp0;
           break;
@@ -440,6 +431,16 @@ private:
           assert(x >= 0 && x <= 255);
           bp[x] = bp[opx.opOp1];
           break;
+        */
+        case Op.lstore: // store value *from* dest into local slot; op0: slot number
+          bp[opx.opOp0] = bp[opx.opDest];
+          break;
+        case Op.fstore: // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
+          assert(0);
+        case Op.i1store: // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays
+          assert(0);
+        case Op.i2store: // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
+          assert(0);
 
         //case Op.oload: // load object field to dest; op0: int reg (obj id; -666: global object); op1: int reg (field id)
         //case Op.iload: // load indexed (as iref)

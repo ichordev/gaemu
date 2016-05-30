@@ -69,16 +69,15 @@ enum Op {
 
   ret, // dest is retvalue; it is copied to reg0; other stack items are discarded
 
-  // as we are using refloads only in the last stage of assignment, they can create values
-  lref, // load slot reference to dest; op0: slot number
-  fref, // load field reference; op0: obj id; op1: int! reg (field id); can create fields
   fval, // load field value; op0: obj id; op1: int! reg (field id)
-  i1ref, // load indexed reference; op0: varref; op1: index; can create arrays
-  i2ref, // load indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
   i1val, // load indexed value; op0: varref; op1: index
   i2val, // load indexed value; op0: varref; op1: first index; (op1+1): second index
 
-  rstore, // store to op0-varref from op1
+  // ref+store will be replaced with this
+  lstore, // store value *from* dest into local slot; op0: slot number
+  fstore, // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
+  i1store, // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays
+  i2store, // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
 
   // `with` is done by copying `self` to another reg, execute the code and restore `self`
 
@@ -94,6 +93,15 @@ enum Op {
   // let VM to free all iterators from those slots on function exit
 
   lirint, // dest = lrint(op0): do lrint() (or another fast float->int conversion)
+
+  // as we are using refloads only in the last stage of assignment, they can create values
+  // there "ref" opcodes will be never seen in the final compiled code
+  // the compiler will change 'em to the corresponding stores
+  lref, // load slot reference to dest; op0: slot number
+  fref, // load field reference; op0: obj id; op1: int! reg (field id); can create fields
+  i1ref, // load indexed reference; op0: varref; op1: index; can create arrays
+  i2ref, // load indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
+  //rstore, // store to op0-varref from op1
 }
 
 
@@ -205,15 +213,21 @@ shared static this () {
 
     Op.ret: Dest,
 
+    Op.lstore: DestOp0Op1, // store value *from* dest into local slot; op0: slot number
+    Op.fstore: DestOp0Op1, // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
+    Op.i1store: DestOp0Op1, // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays
+    Op.i2store: DestOp0Op1, // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
+
     Op.lref: DestOp0,
-    Op.fref: DestOp0Op1,
     Op.fval: DestOp0Op1,
-    Op.i1ref: DestOp0Op1,
     Op.i1val: DestOp0Op1,
-    Op.i2ref: DestOp0Op1,
     Op.i2val: DestOp0Op1,
 
-    Op.rstore: DestOp0,
+    Op.fref: DestOp0Op1,
+    Op.i1ref: DestOp0Op1,
+    Op.i2ref: DestOp0Op1,
+
+    //Op.rstore: DestOp0,
 
     Op.siter: DestOp0,
     Op.niter: DestJump,
