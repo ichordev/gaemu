@@ -74,7 +74,7 @@ enum Op {
   i2val, // load indexed value; op0: varref; op1: first index; (op1+1): second index
 
   // ref+store will be replaced with this
-  lstore, // store value *from* dest into local slot; op0: slot number
+  //lstore, // store value *from* dest into local slot; op0: slot number
   fstore, // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
   i1store, // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays
   i2store, // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
@@ -97,7 +97,7 @@ enum Op {
   // as we are using refloads only in the last stage of assignment, they can create values
   // there "ref" opcodes will be never seen in the final compiled code
   // the compiler will change 'em to the corresponding stores
-  lref, // load slot reference to dest; op0: slot number
+  //lref, // load slot reference to dest; op0: slot number
   fref, // load field reference; op0: obj id; op1: int! reg (field id); can create fields
   i1ref, // load indexed reference; op0: varref; op1: index; can create arrays
   i2ref, // load indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
@@ -213,12 +213,12 @@ shared static this () {
 
     Op.ret: Dest,
 
-    Op.lstore: DestOp0Op1, // store value *from* dest into local slot; op0: slot number
+    //Op.lstore: DestOp0Op1, // store value *from* dest into local slot; op0: slot number
     Op.fstore: DestOp0Op1, // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
     Op.i1store: DestOp0Op1, // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays
     Op.i2store: DestOp0Op1, // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
 
-    Op.lref: DestOp0,
+    //Op.lref: DestOp0,
     Op.fval: DestOp0Op1,
     Op.i1val: DestOp0Op1,
     Op.i2val: DestOp0Op1,

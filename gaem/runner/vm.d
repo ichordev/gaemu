@@ -432,9 +432,9 @@ private:
           bp[x] = bp[opx.opOp1];
           break;
         */
-        case Op.lstore: // store value *from* dest into local slot; op0: slot number
-          bp[opx.opOp0] = bp[opx.opDest];
-          break;
+        //case Op.lstore: // store value *from* dest into local slot; op0: slot number
+        //  bp[opx.opOp0] = bp[opx.opDest];
+        //  break;
         case Op.fstore: // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
           assert(0);
         case Op.i1store: // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays

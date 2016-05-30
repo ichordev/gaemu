@@ -563,7 +563,7 @@ void doCompileFunc (VM vm, NodeFunc fn) {
         // assignment
         if (cast(NodeId)n.el is null && cast(NodeDot)n.el is null && cast(NodeIndex)n.el is null) compileError(n.loc, "assignment to rvalue");
         if (auto did = cast(NodeId)n.el) {
-          // try to put value directly to variable slot
+          // try to put value directly to local variable slot
           auto vdst = varSlot(did.name);
           if (vdst >= 0) {
             auto dest = compileExpr(n.er, ddest:vdst);
@@ -576,9 +576,9 @@ void doCompileFunc (VM vm, NodeFunc fn) {
         auto dest = compileExpr(n.el, wantref:true);
         //emit(Op.rstore, dest, src);
         switch (vm.code[pc-1].opCode) {
-          case Op.lref: // load slot reference to dest; op0: slot number
-            opReplace(pc-1, Op.lstore, src); // store value *from* dest into local slot; op0: slot number
-            break;
+          //case Op.lref: // load slot reference to dest; op0: slot number
+          //  opReplace(pc-1, Op.lstore, src); // store value *from* dest into local slot; op0: slot number
+          //  break;
           case Op.fref: // load field reference; op0: obj id; op1: int! reg (field id); can create fields
             opReplace(pc-1, Op.fstore, src); // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
             break;
@@ -658,7 +658,9 @@ void doCompileFunc (VM vm, NodeFunc fn) {
           auto vsl = varSlot(n.name);
           if (vsl >= 0) {
             // this is local variable
-            emit(Op.lref, dest, cast(ubyte)vsl);
+            //emit(Op.lref, dest, cast(ubyte)vsl);
+            // NodeBinaryAss will take care of this case completely
+            assert(0, "internal compiler error");
           } else {
             // this is `self` field
             auto fid = allocSlot(n.loc);
