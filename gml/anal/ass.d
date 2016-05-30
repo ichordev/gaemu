@@ -15,16 +15,15 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gmlanal.withloop is aliced;
+module gml.anal.ass is aliced;
 
-import gmlparser;
-import gmlanal.utils;
+import gml.parser;
+import gml.anal.utils;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-void analWith (NodeFunc fn) {
-
-  void anal (Node nn) {
+void analAss (NodeFunc fn) {
+  void anal (Node nn, Loc wasCmp=Loc.init) {
     if (nn is null) return;
     if (cast(NodeStatement)nn) {
       selectNode!(void)(nn,
@@ -33,33 +32,8 @@ void analWith (NodeFunc fn) {
         (NodeStatementEmpty n) {},
         (NodeStatementExpr n) { anal(n.e); },
         (NodeReturn n) { anal(n.e); },
-        (NodeWith n) {
-          anal(n.e);
-          if (auto blk = cast(NodeBlock)n.ebody) {
-            if (blk.stats.length == 0) {
-              message(fn, n.loc, ": ???");
-            } else if (blk.stats.length == 1) {
-              if (cast(NodeStatementExpr)blk.stats[0] || cast(NodeReturn)blk.stats[0]) {
-                message(fn, n.loc, ": possible excessive '{}' in 'with'");
-                return;
-              }
-              if (cast(NodeStatementEmpty)blk.stats[0]) {
-                message(fn, n.loc, ": empty statement in empty block in 'with'");
-                return;
-              }
-              if (cast(NodeStatementBreak)blk.stats[0]) {
-                message(fn, n.loc, ": single 'break' in 'with', noop");
-                return;
-              }
-              if (cast(NodeStatementContinue)blk.stats[0]) {
-                message(fn, n.loc, ": single 'continue' in 'with', noop");
-                return;
-              }
-            }
-          }
-          anal(n.ebody);
-        },
-        (NodeIf n) { anal(n.ec); anal(n.et); anal(n.ef); },
+        (NodeWith n) { anal(n.e); anal(n.ebody); },
+        (NodeIf n) { anal(n.ec, wasCmp); anal(n.et); anal(n.ef); },
         (NodeStatementBreak n) {},
         (NodeStatementContinue n) {},
         (NodeFor n) { anal(n.einit); anal(n.econd); anal(n.enext); anal(n.ebody); },
@@ -75,25 +49,25 @@ void analWith (NodeFunc fn) {
     } else {
       selectNode!(void)(nn,
         (NodeLiteral n) {},
-        (NodeUnary n) { anal(n.e); },
-        (NodeBinaryAss n) { anal(n.el); anal(n.er); },
-        (NodeBinary n) { anal(n.el); anal(n.er); },
+        (NodeUnaryParens n) { anal(n.e); },
+        (NodeUnary n) { anal(n.e, wasCmp); },
+        (NodeBinaryCmp n) {
+          if (wasCmp.valid) message(fn, n.loc, ": double logic op in expression, previous was at ", wasCmp.toStringNoFile);
+          anal(n.el, n.loc); anal(n.er, n.loc);
+        },
+        (NodeBinaryAss n) { anal(n.el, n.loc/*hack*/); anal(n.er, n.loc/*hack*/); },
+        (NodeBinary n) { anal(n.el, wasCmp); anal(n.er, wasCmp); },
         (NodeFCall n) {
-          anal(n.fe);
+          anal(n.fe, wasCmp);
           foreach (immutable idx, Node a; n.args) anal(a);
         },
         (NodeId n) {},
         (NodeDot n) { anal(n.e); },
-        (NodeIndex n) {
-          anal(n.ei0);
-          anal(n.ei1);
-          anal(n.e);
-        },
+        (NodeIndex n) { anal(n.ei0); anal(n.ei1); anal(n.e); },
         (NodeFunc n) { anal(n.ebody); },
         () { assert(0, "unimplemented node: "~typeid(nn).name); },
       );
     }
   }
-
   anal(fn);
 }

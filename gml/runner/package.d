@@ -1,4 +1,4 @@
-/* GML parser
+/* GML runner
  * coded by Ketmar // Invisible Vector <ketmar@ketmar.no-ip.org>
  * Understanding is not required. Only obedience.
  *
@@ -15,11 +15,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gmlparser;
+module gml.runner;
 
-public import gmlparser.utils;
-//public import gmlparser.tokens;
-public import gmlparser.lexer;
-public import gmlparser.ast;
-public import gmlparser.astools;
-public import gmlparser.parser;
+public import gml.runner.vm;

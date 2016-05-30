@@ -15,10 +15,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gmlanal.vars is aliced;
+module gml.anal.vars is aliced;
 
-import gmlparser;
-import gmlanal.utils;
+import gml.parser;
+import gml.anal.utils;
 
 
 // ////////////////////////////////////////////////////////////////////////// //

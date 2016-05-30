@@ -15,10 +15,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gmlutils.cliarg is aliced;
+module gml.utils.cliarg is aliced;
 
-import gmlparser;
-import gmlutils.loader;
+import gml.parser;
+import gml.utils.loader;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
@@ -47,6 +47,7 @@ NodeFunc[] cliProcessArgs(Opts...) (ref string[] args) {
         }
       }
       if (found) continue;
+      if (fname[0] == '-') throw new Exception("invalid option: '"~fname~"'");
       if (fname[0] == '@') {
         if (fname.length < 2) assert(0, "gmk file?");
         if (dumpFileNames) { import std.stdio; writeln("loading '", fname[1..$], "'..."); }

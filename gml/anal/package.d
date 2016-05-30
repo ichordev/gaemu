@@ -1,4 +1,4 @@
-/* GML runner
+/* GML analyzer
  * coded by Ketmar // Invisible Vector <ketmar@ketmar.no-ip.org>
  * Understanding is not required. Only obedience.
  *
@@ -15,6 +15,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gmlrunner;
+module gml.anal;
 
-public import gmlrunner.vm;
+public import gml.parser;
+public import gml.anal.ass;
+public import gml.anal.uninit;
+public import gml.anal.vars;
+public import gml.anal.withloop;

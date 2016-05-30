@@ -1,4 +1,4 @@
-/* GML utils
+/* GML analyzer
  * coded by Ketmar // Invisible Vector <ketmar@ketmar.no-ip.org>
  * Understanding is not required. Only obedience.
  *
@@ -15,7 +15,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gmlutils;
+module gml.anal.utils;
 
-public import gmlutils.loader;
-public import gmlutils.cliarg;
+import std.stdio;
+
+import gml.parser;
+
+
+// ////////////////////////////////////////////////////////////////////////// //
+void message(A...) (File fl, NodeFunc fn, Loc loc, A args) {
+  fl.writeln(loc, ": ", args);
+  if (fn.pp !is null) fn.pp.printCaret(loc, fl);
+}
+
+
+void message(A...) (NodeFunc fn, Loc loc, A args) { message(stdout, fn, loc, args); }

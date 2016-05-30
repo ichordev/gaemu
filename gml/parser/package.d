@@ -1,4 +1,4 @@
-/* GML analyzer
+/* GML parser
  * coded by Ketmar // Invisible Vector <ketmar@ketmar.no-ip.org>
  * Understanding is not required. Only obedience.
  *
@@ -15,10 +15,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gmlanal;
+module gml.parser;
 
-public import gmlparser;
-public import gmlanal.ass;
-public import gmlanal.uninit;
-public import gmlanal.vars;
-public import gmlanal.withloop;
+public import gml.parser.utils;
+//public import gml.parser.tokens;
+public import gml.parser.lexer;
+public import gml.parser.ast;
+public import gml.parser.astools;
+public import gml.parser.parser;

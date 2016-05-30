@@ -2,9 +2,9 @@ module frex is aliced;
 
 import std.stdio;
 
-import gmlparser;
-import gmlutils;
-import gmlrunner;
+import gml.parser;
+import gml.utils;
+import gml.runner;
 
 
 // ////////////////////////////////////////////////////////////////////////// //

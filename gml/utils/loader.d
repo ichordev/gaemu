@@ -15,12 +15,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gmlutils.loader is aliced;
+module gml.utils.loader is aliced;
 
 import std.stdio;
 
-import gmlparser;
-import ungmk;
+import gml.parser;
+import gml.ungmk;
 
 
 // ////////////////////////////////////////////////////////////////////////// //

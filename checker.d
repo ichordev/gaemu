@@ -2,9 +2,9 @@ module checker is aliced;
 
 import std.stdio;
 
-import gmlparser;
-import gmlanal;
-import gmlutils;
+import gml.parser;
+import gml.anal;
+import gml.utils;
 
 
 // ////////////////////////////////////////////////////////////////////////// //

@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gmlparser.gentokens is aliced;
+module gml.parser.gentokens is aliced;
 
 string[] tokens = [
   "false",
@@ -156,7 +156,7 @@ fo.writeln(`/* GML parser
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */`);
-  fo.writeln("module gmlparser.tokens;");
+  fo.writeln("module gml.parser.tokens;");
 
   // fo.write enum
   fo.writeln();

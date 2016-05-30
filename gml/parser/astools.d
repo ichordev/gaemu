@@ -15,12 +15,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gmlparser.astools is aliced;
+module gml.parser.astools is aliced;
 
-import gmlparser.lexer;
-import gmlparser.tokens;
-import gmlparser.utils;
-import gmlparser.ast;
+import gml.parser.lexer;
+import gml.parser.tokens;
+import gml.parser.utils;
+import gml.parser.ast;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
