@@ -15,10 +15,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gml.anal;
+module gaem.anal.utils;
 
-public import gml.parser;
-public import gml.anal.ass;
-public import gml.anal.uninit;
-public import gml.anal.vars;
-public import gml.anal.withloop;
+import std.stdio;
+
+import gaem.parser;
+
+
+// ////////////////////////////////////////////////////////////////////////// //
+void message(A...) (File fl, NodeFunc fn, Loc loc, A args) {
+  fl.writeln(loc, ": ", args);
+  if (fn.pp !is null) fn.pp.printCaret(loc, fl);
+}
+
+
+void message(A...) (NodeFunc fn, Loc loc, A args) { message(stdout, fn, loc, args); }

@@ -15,12 +15,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gml.runner.vm is aliced;
+module gaem.runner.vm is aliced;
 
 import std.stdio : File;
 import std.traits;
 
-import gml.parser;
+import gaem.parser;
 
 
 // ////////////////////////////////////////////////////////////////////////// //

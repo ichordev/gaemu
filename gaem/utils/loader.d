@@ -15,12 +15,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gml.utils.loader is aliced;
+module gaem.utils.loader is aliced;
 
 import std.stdio;
 
-import gml.parser;
-import gml.ungmk;
+import gaem.parser;
+import gaem.ungmk;
 
 
 // ////////////////////////////////////////////////////////////////////////// //

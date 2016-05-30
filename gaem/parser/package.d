@@ -15,11 +15,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gml.parser;
+module gaem.parser;
 
-public import gml.parser.utils;
-//public import gml.parser.tokens;
-public import gml.parser.lexer;
-public import gml.parser.ast;
-public import gml.parser.astools;
-public import gml.parser.parser;
+public import gaem.parser.utils;
+//public import gaem.parser.tokens;
+public import gaem.parser.lexer;
+public import gaem.parser.ast;
+public import gaem.parser.astools;
+public import gaem.parser.parser;

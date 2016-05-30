@@ -1,4 +1,4 @@
-/* GML utils
+/* GML analyzer
  * coded by Ketmar // Invisible Vector <ketmar@ketmar.no-ip.org>
  * Understanding is not required. Only obedience.
  *
@@ -15,7 +15,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gml.utils;
+module gaem.anal;
 
-public import gml.utils.loader;
-public import gml.utils.cliarg;
+public import gaem.parser;
+public import gaem.anal.ass;
+public import gaem.anal.uninit;
+public import gaem.anal.vars;
+public import gaem.anal.withloop;

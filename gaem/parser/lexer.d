@@ -15,9 +15,9 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gml.parser.lexer is aliced;
+module gaem.parser.lexer is aliced;
 
-import gml.parser.tokens;
+import gaem.parser.tokens;
 
 
 // ////////////////////////////////////////////////////////////////////////// //

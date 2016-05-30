@@ -15,10 +15,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gml.utils.cliarg is aliced;
+module gaem.utils.cliarg is aliced;
 
-import gml.parser;
-import gml.utils.loader;
+import gaem.parser;
+import gaem.utils.loader;
 
 
 // ////////////////////////////////////////////////////////////////////////// //

@@ -15,11 +15,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gml.parser.ast is aliced;
+module gaem.parser.ast is aliced;
 
-import gml.parser.lexer;
-import gml.parser.tokens;
-import gml.parser.utils;
+import gaem.parser.lexer;
+import gaem.parser.tokens;
+import gaem.parser.utils;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
@@ -555,7 +555,7 @@ class NodeSwitch : NodeStatement {
 // ////////////////////////////////////////////////////////////////////////// //
 // function with body
 class NodeFunc : Node {
-  import gml.parser.parser : Parser;
+  import gaem.parser.parser : Parser;
 
   string name;
   NodeBlock ebody;

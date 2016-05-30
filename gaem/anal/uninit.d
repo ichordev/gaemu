@@ -15,10 +15,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gml.anal.uninit is aliced;
+module gaem.anal.uninit is aliced;
 
-import gml.parser;
-import gml.anal.utils;
+import gaem.parser;
+import gaem.anal.utils;
 
 
 // ////////////////////////////////////////////////////////////////////////// //

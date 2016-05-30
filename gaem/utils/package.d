@@ -1,4 +1,4 @@
-/* GML runner
+/* GML utils
  * coded by Ketmar // Invisible Vector <ketmar@ketmar.no-ip.org>
  * Understanding is not required. Only obedience.
  *
@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gml.runner;
+module gaem.utils;
 
-public import gml.runner.vm;
+public import gaem.utils.loader;
+public import gaem.utils.cliarg;

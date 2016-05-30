@@ -15,11 +15,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-module gml.parser.parser is aliced;
+module gaem.parser.parser is aliced;
 
-import gml.parser.ast;
-import gml.parser.lexer;
-import gml.parser.tokens;
+import gaem.parser.ast;
+import gaem.parser.lexer;
+import gaem.parser.tokens;
 
 
 final class Parser {
