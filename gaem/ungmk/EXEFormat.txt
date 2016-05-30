@@ -1,0 +1,534 @@
+GM8 EXE Format
+v1.2 - Zach, original by Charlie
+
+This document loosely follows IsmAvatar's documenting style, mostly because my typical
+documentation style doesn't work well with GM formats, seeing as how it expects the format
+to not be completely fucked.
+
+Note that many of the structures in the EXE follow closely to the GMK format.
+Also note that types such as timestamps, booleans, doubles, etc use the same format as the
+GMK. Refer to IsmAvatar's GMK documentation for more detail.
+
+Comments will be inside of brackets, [ ]
+
+GMK Format (>=v5.3a): http://www.ismavatar.com/lgm/formats/gmformat8.txt
+
+Please let me know if you find any errors or can fill in an unknown field.
+
+Cheers, Zach.
+
+
+--- Main Format ---
+
+ 0 4b Magic
+ 4 4b Version
+ 8 4b Debug flag
+
+ 0 4b Version                                                                   [ Settings ]
+ 4 4b LenOfData         { Compressed <Settings> }
+
+ 0 4b LenOfStr          { String }                                              [ DX8 Wrapper ]
+ 4 4b LenOfData         { Compressed <d3dx8.dll> }
+
+ 0 4b NumberOfDwords                                                            [ d1 ]
+ 4 4b NumberOfDwords                                                            [ d2 ]
+ 8 ?b Junk size of d1 * 4
+ 0 512b Swap Table
+ 0 ?b Junk size of d2 * 4
+
+ 0 4b LenOfData         { Data }                                                [ Encrypted ]
+{
+         0 4b NumberOfDwords                                                    [ d3 ]
+         4 4b Junk size of d3 * 4
+
+         0 4b Pro
+         4 4b GameID
+         8 16b Unknown
+
+        18 4b Version                                                           [ Extensions ]
+        1C 4b ExtensionCount
+        For ExtensionCount {
+                <Extension>
+        }
+
+         0 4b Version                                                           [ Triggers ]
+         4 4b TriggerCount
+        For TriggerCount {
+                0 4b LenOfData  { Compressed <Trigger> }
+        }
+
+         0 4b Version                                                           [ Constants ]
+         4 4b ConstantCount
+        For ConstantCount {
+                <Constant>
+        }
+
+        <Sounds, Sprites, Backgrounds, Paths, Scripts, Fonts, TimeLines, Objects, Rooms>
+         0 4b Version
+         4 4b Count
+        For Count {
+                0 4b LenOfData  { Compressed data }
+        }
+
+         0 4b ID of last object placed
+         4 4b ID of last tile placed
+
+         0 4b Version                                                           [ Includes ]
+         4 4b IncludeCount
+        For IncludeCount {
+                0 4b LenOfData  { Compressed <Include> }
+        }
+
+         0 4b Version                                                           [ Help ]
+         4 4b LenOfData { Compressed <Help> }
+
+         0 4b Version                                                           [ Library Init Code ]
+         4 4b Count
+        For Count {
+                0 4b LenOfString  { String }
+        }
+
+         0 4b Version                                                           [ Room order ]
+         4 4b Count
+        For Count {
+                0 4b RoomID
+        }
+
+        <More junk>
+}
+
+<End Of File>
+
+--- Resource Formats ---
+
+<Settings> {
+         0 4b Full screen
+         4 4b Interpolate colors
+         8 4b No border around window
+         C 4b Show cursor
+        10 4b Scale
+        14 4b Resizable
+        18 4b Always on top
+        1C 4b Color outside room
+        20 4b Set resolution/refresh rate/bit depth
+        24 4b Bit depth option
+        28 4b Resolution option
+        2C 4b Refresh rate option
+        30 4b No buttons in window caption
+        34 4b Use vsync to avoid tearing
+        38 4b Disable screensavers
+        3C 4b F4 changes to fullscreen
+        40 4b F1 shows info
+        44 4b Esc closes game
+        48 4b F5 and F6 save and load respectively
+        4C 4b F9 takes a screenshot
+        50 4b Close button treated as Esc
+        54 4b Priority
+        58 4b Freeze on loss of focus
+
+        5C 4b ShowBar
+        If ShowBar {
+                60 4b ProgressBack Present
+                If Present {
+                        64 4b LenOfData { Compressed <Bitmap> }
+                }
+
+                 0 4b ProgessFore Present
+                If Present {
+                        4 4b LenOfData { Compressed <Bitmap> }
+                }
+        }
+
+         0 4b Background Present
+        If Presents {
+                 4 4b LenOfData { Compressed <Bitmap> }
+        }
+
+         0 4b Loading screen is translucent
+         4 4b Loading screen translucency
+         8 4b Scale progress bar indicator
+         C 4b Show errors
+        10 4b Log errors
+        14 4b Errors are all fatal
+        18 4b Treat uninitialized vars as 0
+}
+
+<Extension> {
+         0 4b Version
+         4 4b Length    { String <Name> }
+         0 4b Length    { String <TempName> }
+         0 4b Count
+        For Count {
+                 0 4b Version
+                 4 4b Length    { String <Filename> }
+                 0 4b Type                                              [ GML, DLL, Lib, Other ]
+                 4 4b Length    { String <InitializationCode> }
+                 0 4b Length    { String <FinalizationCode> }
+
+                 0 4b Count*
+                For Count {
+                         0 4b Version
+                         4 4b Length    { String <Name> }
+                         0 4b Length    { String <ExternalName> }
+                         0 4b CallType                  [ 2 = GML, 12 = stdcall, 13 = cdecl ]
+                         4 4b Internal ID?              [ Starts at 0x100 ]
+                         8 4b ArgumentCount
+                        For ArgumentCount {
+                                 0 4b ArgumentKind      [ 1 = String, 2 = Real ]
+                        }
+
+                         0 4b ConstantCount
+                        For ConstantCount {
+                                 0 4b Version
+                                 4 4b Length    { String <Name> }
+                                 0 4b Length    { String <Value> }
+                        }
+                }
+
+                [ Note: This section is a bit odd, Mark flip-flops
+                        standards here a whole lot, sorry :/            ]
+                 0 4b LenOfData { <Data> }
+                {
+                         0 4b Seed                              [ Signed ]
+                        Encrypted {                             [ Length = CurPos - ExtensionSize ]
+                                For Count* {                    [ Count = Count*? Not sure ]
+                                        0 4b LenOfData  { Compressed <File> }
+                                }
+                        }
+                }
+        }
+}
+
+<Trigger> {
+         0 4b Exists
+        If Exists {
+                 4 4b Version
+                 8 4b Length    { String <Name> }
+                 0 4b Length    { String <Condition> }
+                 4 4b When to execute
+                 8 4b Length    { String <ConstantName> }
+        }
+}
+
+<Constant> {
+         0 4b Length    { String <Name> }
+         0 4b Length    { String <Value> }
+}
+
+<Sound> {
+         0 4b Exists
+        If Exists {
+                 0 4b Length    { String <Name> }
+                 0 4b Version
+                 4 4b Kind
+                 8 4b Length    { String <Filetype (".wav")> }
+                 0 4b Length    { String <Filename ("sound.wav")> }
+                 0 4b Exists
+                If Exists {
+                         0 4b Length    { <File> }
+                }
+
+                 0 4b Effects
+                 4 8b Volume
+                 C 8b Pan
+                14 4b Preload
+        }
+}
+
+<Sprite> {
+         0 4b Exists
+        If Exists {
+                 0 4b Length    { String <Name> }
+                 0 4b Version
+                 4 4b X-Origin
+                 8 4b Y-Origin
+                [ Note: Again, this section is a little strange, I didn't even notice
+                        that the If {} condition existed until Goomba Online stopped decompiling
+                        at random, turns out spr_blank, which had no frames was causing it.     ]
+
+                 C 4b NumberOfFrames*
+                If NumberOfFrames > 0 {
+                        For NumberOfFrames {
+                                 0 4b Version
+                                 4 4b Width
+                                 8 4b Height
+                                 C 4b LenOfData { <Raw RGBA> }
+                        }
+
+                         0 4b Separate Collision Mask
+                        If SepCollMask {
+                                For NumberOfFrames* {
+                                         0 4b Version
+                                         4 4b Width
+                                         8 4b Height
+                                         C 4b Left
+                                        10 4b Right
+                                        14 4b Bottom
+                                        18 4b Top
+
+                                        [ Note: If you find a 1 in the following array then
+                                                "precise collision checking" will be ticked.    ]
+
+                                        For Width * Height {
+                                                 0 4b Mask data
+                                        }
+                                }
+                        } else {
+                                 0 4b Version
+                                 4 4b Width
+                                 8 4b Height
+                                 C 4b Left
+                                10 4b Right
+                                14 4b Bottom
+                                18 4b Top
+
+                                [ Note: If you find a 1 in the following array then
+                                                "precise collision checking" will be ticked.    ]
+
+                                For Width * Height {
+                                         0 4b Mask data
+                                }
+                        }
+                }
+        }
+}
+
+<Background> {
+         0 4b Exists
+        If Exists {
+                 4 4b Length    { String <Name> }
+                 0 4b Version
+                [ Note: I believe that Mark once had tileset information that has since been removed
+                        in GM8, this may explain why there are two versions here.               ]
+
+                 0 4b Version
+                 4 4b Width
+                 8 4b Height
+                If Width != 0 && Height != 0 {
+                         0 4b Length    { <Raw RGBA> }
+                }
+        }
+}
+
+<Path> {
+         0 4b Exists
+        If Exists {
+                 4 4b Length    { String <Name> }
+                 0 4b Version
+                 4 4b Connection type
+                 8 4b Closed
+                 C 4b Precision
+                10 4b Count
+                For Count {
+                         0 8b X
+                         8 8b Y
+                        10 8b Speed
+                }
+        }
+}
+
+<Script> {
+         0 4b Exists
+        If Exists {
+                 4 4b Length    { String <Name> }
+                 0 4b Version
+                 4 4b Length    { String <Script> }
+        }
+}
+
+<Font> {
+         0 4b Exists
+        If Exists {
+                 4 4b Length    { String <Name> }
+                 0 4b Version
+                 4 4b Length    { String <FontName> }
+                 0 4b Font size
+                 4 4b Bold
+                 8 4b Italic
+                 C 4b Range start
+                10 4b Range end
+                14 1808b Unknown                        [ Kerning? ]
+                61C 4b Length   { <Unknown data> }      [ Font header? ]
+        }
+}
+
+<Actions*> {                                            [ Here to prevent re-documenting ]
+         0 4b Version
+         4 4b ActionCount
+        For ActionCount {
+                 0 4b Version
+                 4 4b LibID
+                 8 4b ActionID
+                 C 4b Action kind
+                10 4b May be relative
+                14 4b Question
+                18 4b Applies to something
+                1C 4b Type
+                20 4b Length    { String <Name> }
+                 0 4b Length    { String <Code> }
+
+                 0 4b Arguments actually used
+                 4 4b Total number of arguments (always 8)
+                For 8 {
+                         0 4b Argument kind
+                }
+
+                 0 4b Applies to ObjectIndex
+                 4 4b Relative
+
+                 8 4b Number of arguments (always 8)
+                For 8 {
+                         0 4b Length    { String <Argument> }
+                }
+
+                 0 4b Not flag
+        }
+}
+
+<TimeLine> {
+         0 4b Exists
+        If Exists {
+                 4 4b Length    { String <Name> }
+                 0 4b Version
+                 4 4b MomentCount
+                For MomentCount {
+                         0 4b Moment position
+                         <Actions*>                     [ Documented above ]
+                }
+        }
+}
+
+<Object> {
+         0 4b Exists
+        If Exists {
+                 0 4b Length    { String <Name> }
+                 0 4b Version
+                 4 4b SpriteIndex                       [ -1 = None ]
+                 8 4b Solid
+                 C 4b Visible
+                10 4b Depth
+                14 4b Persistent
+                18 4b Parent ObjectIndex
+                1C 4b Mask SpriteIndex
+
+                [ Note: I would check out LGM's SVN and the GMK documentation
+                        provided by IsmAvatar for this section, it's very, very,
+                        very, very, very, very fucked. She explains it much better than
+                        I.      ]
+
+                20 4b Number of events - 1              [ Unknown reason ]
+                For 12 {
+                        Until EventNumber == -1 {
+                                 0 4b EventNumber
+                                If EventNumber >= 0 {
+                                        <Actions*>
+                                }
+                        }
+
+                         0 4b -1                        [ Marks end of primary event ]
+                }
+        }
+}
+
+<Room> {
+         0 4b Exists
+        If Exists {
+                 0 4b Length    { String <Name> }
+                 0 4b Version
+                 4 4b Length    { String <Room caption> }
+                 0 4b Width
+                 4 4b Height
+                 8 4b Speed
+                 C 4b Persistent
+                10 4b BG Color
+                14 4b Draw BG Color
+                1C 4b Length    { String <Creation Code> }
+
+                 0 4b Number of backgrounds (Always 8)
+                For 8 {
+                         0 4b Visible
+                         4 4b Foreground
+                         8 4b BackgroundIndex
+                         C 4b X
+                        10 4b Y
+                        14 4b Tile horizontal
+                        18 4b Tile vertical
+                        1C 4b Horizontal speed
+                        20 4b Vertical speed
+                        24 4b Stretch
+                }
+
+                 0 4b Enable views
+                 4 4b Number of views (Always 8)
+                For 8 {
+                         0 4b Visible
+                         4 4b View X
+                         8 4b View Y
+                         C 4b View Width
+                        10 4b View Height
+                        14 4b Port X
+                        18 4b Port Y
+                        1C 4b Port Width
+                        20 4b Port Height
+                        24 4b Horizontal border
+                        28 4b Vertical border
+                        2C 4b Horizontal speed
+                        30 4b Vertical speed
+                        34 4b Following ObjectIndex
+                }
+
+                 0 4b Number of instances
+                For NumberOfInstances {
+                         0 4b X
+                         4 4b Y
+                         8 4b ObjectIndex
+                         C 4b ID
+                        10 4b Length    { String <Creation Code> }
+                }
+
+                 0 4b Number of tiles {
+                         0 4b X
+                         4 4b Y
+                         8 4b BackgroundIndex
+                         C 4b Tile X
+                        10 4b Tile Y
+                        14 4b Width
+                        18 4b Height
+                        1C 4b Layer
+                        20 4b ID
+                }
+        }
+}
+
+<Include> {
+         0 4b Version
+         4 4b Length    { String <Filename> }
+         0 4b Length    { String <Original filename> }
+         0 4b Original file chosen
+         4 4b Original file size
+         8 4b Store in GMK
+        If OriginalFileChosen && StoreInGMK {
+                 0 4b Length    { File }
+        }
+
+         0 4b Export
+         4 4b Length    { String <Folder to export to> }
+         0 4b Overwrite
+         4 4b Free memory
+         8 4b Remove at end of game
+}
+
+<Help> {
+         0 4b BG Color
+         4 4b Show in separate window
+         8 4b Length    { String <Window caption> }
+         0 4b Left
+         4 4b Top
+         8 4b Width
+         C 4b Height
+        10 4b Show border
+        14 4b Allow player to resize
+        18 4b Stay on top
+        1C 4b Freeze game while help form is in focus
+        20 4b Length    { String <Game Information> }
+}
