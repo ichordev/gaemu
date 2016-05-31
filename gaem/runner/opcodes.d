@@ -52,6 +52,7 @@ enum Op {
 
   plit, // dest becomes pool slot val (val: 2 bytes) -- load value from pool slot; if val is 0xffff, next instruction is skip
   ilit, // dest becomes ilit val (val: short) -- load small integer literal
+  slit, // dest becomes ilit val (val: short) -- load small integer literal as string index
   xlit, // dest becomes integer(!) val (val: short) -- load small integer literal
 
   jump, // addr: 3 bytes
@@ -78,6 +79,10 @@ enum Op {
   fstore, // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
   i1store, // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays
   i2store, // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
+
+  // the following is used in `if (oObj)`
+  //TODO
+  bobji, // load boolean to dest: doesr this object has any alive instance?; op0: obj id
 
   // `with` is done by copying `self` to another reg, execute the code and restore `self`
 
@@ -201,6 +206,7 @@ shared static this () {
 
     Op.plit: Dest2Bytes,
     Op.ilit: DestInt,
+    Op.slit: DestInt,
     Op.xlit: DestInt,
 
     Op.jump: DestJump,

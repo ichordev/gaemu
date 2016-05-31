@@ -1,0 +1,70 @@
+All numbers on this documentation are in Decimal format.
+Unless otherwise stated, values are stored as 4 byte Little-Endian Integers
+A { and its paired } indicate insertions:
+> Any Length followed by { <something> } indicates a string insertion
+> Any value followed by a { on the next line indicates that the
+> information between that { and its paired } is repeated the amount of
+> times specified by that value.
+
+*1* GM versions:
+  520(dec) for GM5.3+
+  500(dec) for GM5.0 - GM5.2
+  (GM5.0 introduced lib files)
+
+*2* Argument Types:
+  0 Expression
+  1 String
+  2 Both
+  3 Boolean
+  4 Menu
+  13 Color
+  15 Font String
+  5 Sprite
+  6 Sound
+  7 Background
+  8 Path
+  9 Script
+  10 Object
+  11 Room
+  12 Font
+  14 Timeline
+
+GM version needed for the following info *1*
+Length of Tab Caption { Tab Caption }
+Lib ID (if ID < 1000, this file is protected as official)
+Length of Author { Author }
+Lib Version
+(double) is the "Last Changed:" time - days since 1899-12-30
+Length of Info { Info }
+Length of Initialization Code { Initialization Code }
+Advanced
+Number of actions (changes to a different number in official libs.)
+Number of actions again
+{
+  GM version needed for the following info *1*
+  Length of Name { Name }
+  Action Id
+  Image size { Image Data (bmp format) }
+  Hidden
+  Advanced
+  *Registered only (* - excluded in version 500)
+  Length of Description { Description }
+  Length of List Text { List Text }
+  Length of Hint Text { Hint Text }
+  Kind (values are 0-10)
+  Interface Kind (0=Normal, 1=None, 2=Arrows, 5=Code, 6=Text)
+  Question
+  Apply to
+  Relative
+  Argument Count
+  Number of Arguments (always 8)
+  {
+   Length of Argument Caption { Argument Caption }
+   Argument Type (0-15) *2*
+   Length of Default Argument Value { Default Argument Value }
+   Length of Menu { Menu }
+  }
+  Execution Type (0-2)
+  Length of Function Name { Function Name }
+  Length of Code { Code }
+}

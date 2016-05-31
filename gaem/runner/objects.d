@@ -41,6 +41,52 @@ package(gaem.runner) short allocateFieldId (string name) {
 
 private enum PredefinedFields = [
   "object_parent",
+  "id", // int
+  "sprite_index", // int
+  "image_index", // Real
+  "image_speed", // Real
+  "image_xscale", // Real
+  "image_yscale", // Real
+  "image_angle", // Real
+  "image_alpha", // Real
+  "image_blend", // int
+  "mask_index", // int
+  "depth", // Real
+  "x", // Real
+  "y", // Real
+  "xstart", // Real
+  "ystart", // Real
+  "xprevious", // Real
+  "yprevious", // Real
+  "direction", // Real
+  "speed", // Real
+  "friction", // Real
+  "gravity_direction", // Real
+  "gravity", // Real
+  "hspeed", // Real
+  "vspeed", // Real
+  "bbox_left", // int
+  "bbox_right", // int
+  "bbox_top", // int
+  "bbox_bottom", // int
+  "visible", // int
+  "solid", // int
+  "persistent", // int
+  "object_index", // int
+  "alarm0",
+  "alarm1",
+  "alarm2",
+  "alarm3",
+  "alarm4",
+  "alarm5",
+  "alarm6",
+  "alarm7",
+  "alarm8",
+  "alarm9",
+  "alarm10",
+  "alarm11",
+  /*
+  "object_parent",
   "sprite_index",
   "mask_index",
   "solid",
@@ -59,6 +105,7 @@ private enum PredefinedFields = [
   "image_alpha",
   "sprite_width",
   "sprite_height",
+  */
 ];
 
 
@@ -191,7 +238,7 @@ private:
   enum IdStart = 100000;
    __gshared uint nextid = IdStart;
    __gshared Instance[uint] instById;
-   __gshared uint curStep = 0;
+   __gshared ulong curStep = 0; // used for `with` management
 
 private:
   Instance deadNext; // in `deadList`
@@ -202,7 +249,7 @@ private:
   bool mDead;
   InstProxy[] proxies;
   Real[] fields;
-  uint stepMark; // if this != curStep, the object is just created and should be skipped
+  ulong stepMark; // used in `with` management
 
   this (ObjectTpl aparent) {
     mId = nextid++;
@@ -225,7 +272,7 @@ private:
       proxies ~= new InstProxy(this, aparent);
       aparent = aparent.parent;
     }
-    stepMark = curStep+1;
+    stepMark = curStep;
   }
 
 public:
@@ -259,6 +306,7 @@ static:
     InstProxy head; // starting instance
     InstProxy cur; // current instance
     Instance si; // instance for single-instance iterator
+    ulong step;
   }
   private __gshared Iterator[] iters;
   private __gshared uint itersUsed = 1;
@@ -290,7 +338,7 @@ static:
     if (objid == ObjIdAll) {
       if (iall.head is null) return 0; // no instances yet
       auto iid = newIId;
-      with (iters.ptr[iid]) head = cur = iall.head;
+      with (iters.ptr[iid]) { step = curStep++; head = cur = iall.head; }
       return iid;
     }
     // "none" object?
@@ -299,7 +347,7 @@ static:
       // object class
       if (auto proxy = objects.ptr[objid].ilist.head) {
         auto iid = newIId;
-        with (iters.ptr[iid]) head = cur = proxy;
+        with (iters.ptr[iid]) { step = curStep++; head = cur = proxy; }
         return iid;
       }
     }
@@ -321,8 +369,8 @@ static:
     do {
       auto ri = it.cur.self;
       if ((it.cur = it.cur.next) is it.head) it.head = it.cur = null;
-      if (!ri.mDead) return ri.mId; // good instance
-      // bad instance, move on
+      if (!ri.mDead && ri.stepMark <= it.step) return ri.mId; // good instance
+      // bad instance (either dead, or newborn) move on
     } while (it.cur !is null);
     return 0; // no more instances
   }
@@ -366,8 +414,18 @@ static:
     while (deadList !is null) {
       assert(deadList.mDead);
       foreach (InstProxy px; deadList.proxies) px.removeFromLists();
+      // remove from alive instances hash
+      // do it here instead of `kill()`, so stored objids will still work until script end
+      instById.remove(deadList.mId);
       deadList = deadList.deadNext;
     }
+  }
+
+static:
+  // this should be called when top-level script execution is complete
+  void scriptComplete () {
+    freeAllIterators();
+    freeDeadObjects();
   }
 }
 

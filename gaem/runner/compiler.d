@@ -94,7 +94,8 @@ void doCompileFunc (VM vm, NodeFunc fn) {
     }
   }
 
-  uint pc () { return cast(uint)vm.code.length; }
+  uint pc () { pragma(inline, true); return cast(uint)vm.code.length; }
+  void setpc (uint pc) { pragma(inline, true); vm.code.length = pc; vm.code.assumeSafeAppend; }
 
   uint emit (Op op, ubyte dest=0, ubyte op0=0, ubyte op1=0) {
     auto res = cast(uint)vm.code.length;
@@ -479,7 +480,10 @@ void doCompileFunc (VM vm, NodeFunc fn) {
       // string
       //FIXME: speed it up!
       auto sid = v.getStrId;
-      foreach (immutable idx, Real vp; vm.vpool) if (vp.isString && vp.getStrId == sid) { vpidx = cast(uint)idx; break; }
+      if (sid > short.max) compileError(loc, "too many strings");
+      //foreach (immutable idx, Real vp; vm.vpool) if (vp.isString && vp.getStrId == sid) { vpidx = cast(uint)idx; break; }
+      emit2Bytes(Op.slit, dest, cast(short)sid);
+      return;
     } else {
       assert(0, "wtf?!");
     }
@@ -523,15 +527,8 @@ void doCompileFunc (VM vm, NodeFunc fn) {
   // returns dest slot
   // can put value in desired dest
   ubyte compileExpr (Node nn, int ddest=-1, bool wantref=false) {
-    ubyte doBinOp (Op op, NodeBinary n) {
-      auto dest = allocSlot(n.loc, ddest);
-      auto o0 = compileExpr(n.el);
-      auto o1 = compileExpr(n.er);
-      emit(op, dest, o0, o1);
-      freeSlot(o0);
-      freeSlot(o1);
-      return dest;
-    }
+    import core.stdc.math : lrint;
+    import std.math : NaN, isNaN;
 
     ubyte doUnOp (Op op, NodeUnary n) {
       auto dest = allocSlot(n.loc, ddest);
@@ -539,6 +536,125 @@ void doCompileFunc (VM vm, NodeFunc fn) {
       emit(op, dest, o0);
       freeSlot(o0);
       return dest;
+    }
+
+    ubyte doBinOp (Op op, NodeBinary n) {
+      // returns NaN for non-nums
+      // should be called right after `compileExpr()`
+      Real checkILit (uint spc) {
+        // small integer literal?
+        if (spc+1 == pc && vm.code[spc].opCode == Op.ilit) return cast(Real)vm.code[spc].opILit;
+        if (spc+2 == pc && vm.code[spc].opCode == Op.plit) return vm.vpool[vm.code[spc].op2Byte];
+        if (spc+3 == pc && vm.code[spc].opCode == Op.plit && vm.code[spc+1].opCode == Op.skip) return vm.vpool[vm.code[spc+1].op3Byte];
+        return NaN(-1); // arbitrary value
+      }
+
+      //version = mathfold;
+
+      auto dest = allocSlot(n.loc, ddest);
+      version(mathfold) auto spcl = pc;
+      auto o0 = compileExpr(n.el);
+      // check for constant
+      version(mathfold) auto litl = checkILit(spcl);
+      version(mathfold) if (!isNaN(litl)) { freeSlot(o0); o0 = 0; setpc(spcl); } // rewind
+      version(mathfold) auto spcr = pc;
+      auto o1 = compileExpr(n.er);
+      version(mathfold) auto litr = checkILit(spcr);
+      version(mathfold) if (!isNaN(litr)) { freeSlot(o1); o1 = 0; setpc(spcr); } // rewind
+      // folding
+      version(mathfold) {
+        if (!isNaN(litl) && !isNaN(litr)) {
+          switch (op) {
+            case Op.add: emitPLit(n.loc, dest, litl+litr); break;
+            case Op.sub: emitPLit(n.loc, dest, litl-litr); break;
+            case Op.mul: emitPLit(n.loc, dest, litl*litr); break;
+            case Op.rdiv:
+              if (litr == 0) compileError(n.loc, "divizion by zero");
+              emitPLit(n.loc, dest, litl/litr);
+              break;
+            case Op.div:
+              if (litr == 0) compileError(n.loc, "divizion by zero");
+              emitPLit(n.loc, dest, litl/litr);
+              break;
+            case Op.mod:
+              if (litr == 0) compileError(n.loc, "divizion by zero");
+              emitPLit(n.loc, dest, litl%litr);
+              break;
+            case Op.bor: emitPLit(n.loc, dest, lrint(litl)|lrint(litr)); break;
+            case Op.band: emitPLit(n.loc, dest, lrint(litl)&lrint(litr)); break;
+            case Op.bxor: emitPLit(n.loc, dest, lrint(litl)^lrint(litr)); break;
+            case Op.shl: emitPLit(n.loc, dest, lrint(litl)<<lrint(litr)); break;
+            case Op.shr: emitPLit(n.loc, dest, lrint(litl)>>lrint(litr)); break;
+            case Op.lt: emitPLit(n.loc, dest, litl < litr); break;
+            case Op.le: emitPLit(n.loc, dest, litl <= litr); break;
+            case Op.gt: emitPLit(n.loc, dest, litl > litr); break;
+            case Op.ge: emitPLit(n.loc, dest, litl >= litr); break;
+            case Op.eq: emitPLit(n.loc, dest, litl == litr); break;
+            case Op.ne: emitPLit(n.loc, dest, litl != litr); break;
+            case Op.lor: emitPLit(n.loc, dest, (lrint(litl) || lrint(litr) ? 1 : 0)); break;
+            case Op.land: emitPLit(n.loc, dest, (lrint(litl) && lrint(litr) ? 1 : 0)); break;
+            case Op.lxor:
+              auto b0 = (lrint(litl) != 0);
+              auto b1 = (lrint(litr) != 0);
+              if (b0 && b1) b0 = false; else b0 = b0 || b1;
+              emitPLit(n.loc, dest, (b0 ? 1 : 0)); break;
+            default: assert(0);
+          }
+        }
+        if (!isNaN(litr)) {
+          if (op == Op.add || op == Op.sub) {
+            //TODO: check for string op for Op.add
+            if (litr == 0) {
+              // noop
+              // rewind and recompile
+              freeSlot(o0);
+              setpc(spcl);
+              return compileExpr(n.el, dest);
+            }
+          }
+          if (op == Op.div || op == Op.rdiv || op == Op.mul) {
+            if (litr == 1) {
+              // noop
+              // rewind and recompile
+              freeSlot(o0);
+              setpc(spcl);
+              return compileExpr(n.el, dest);
+            }
+          }
+          if (op == Op.mul) {
+            if (litr == 0) {
+              // zero
+              // rewind and recompile
+              freeSlot(o0);
+              setpc(spcl);
+              emitPLit(n.loc, dest, 0);
+              return dest;
+            }
+          }
+          // store right operand back
+          o1 = allocSlot(n.er.loc);
+          emitPLit(n.er.loc, o1, litr);
+        } else if (!isNaN(litl)) {
+          // store left operand back
+          o0 = allocSlot(n.el.loc);
+          emitPLit(n.el.loc, o0, litl);
+        }
+      }
+      emit(op, dest, o0, o1);
+      freeSlot(o0);
+      freeSlot(o1);
+      return dest;
+    }
+
+    // returns NaN for non-nums
+    Real getNumArg (Node n) {
+      if (auto lit = cast(NodeLiteralNum)n) return lit.val;
+      return NaN(-1); // arbitrary value
+    }
+
+    bool isStrArg (Node n) {
+      pragma(inline, true);
+      return (cast(NodeLiteralStr)n !is null);
     }
 
     nn.pcs = pc;
@@ -594,7 +710,28 @@ void doCompileFunc (VM vm, NodeFunc fn) {
         freeSlot(dest);
         return 0;
       },
-      (NodeBinaryAdd n) => doBinOp(Op.add, n),
+      (NodeBinaryAdd n) {
+        /*
+        auto lv = getNumArg(n.el);
+        auto rv = getNumArg(n.er);
+        if (!isNaN(lv)) {
+          if (isStrArg(n.er)) compileError(n.loc, "invalid argument types");
+          if (!isNaN(rv)) {
+            // constant
+            auto dest = allocSlot(n.loc, ddest);
+            emitPLit(n.loc, dest, lv+rv);
+            return dest;
+          }
+          if (lv == 0) return compileExpr(n.er, ddest);
+        }
+        if (!isNaN(rv)) {
+          if (isStrArg(n.el)) compileError(n.loc, "invalid argument types");
+          assert(isNaN(lv));
+          if (rv == 0) return compileExpr(n.el, ddest);
+        }
+        */
+        return doBinOp(Op.add, n);
+      },
       (NodeBinarySub n) => doBinOp(Op.sub, n),
       (NodeBinaryMul n) => doBinOp(Op.mul, n),
       (NodeBinaryRDiv n) => doBinOp(Op.rdiv, n),

@@ -19,10 +19,11 @@ module gaem.utils.cliarg is aliced;
 
 import gaem.parser;
 import gaem.utils.loader;
+import gaem.ungmk;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-NodeFunc[] cliProcessArgs(Opts...) (ref string[] args) {
+NodeFunc[] cliProcessArgs(Opts...) (ref string[] args, void delegate (Gmk gmk) procgmk=null) {
   NodeFunc[] funcs;
   bool nomore = false;
   string[] scargs;
@@ -51,7 +52,9 @@ NodeFunc[] cliProcessArgs(Opts...) (ref string[] args) {
       if (fname[0] == '@') {
         if (fname.length < 2) assert(0, "gmk file?");
         if (dumpFileNames) { import std.stdio; writeln("loading '", fname[1..$], "'..."); }
-        funcs ~= gmkLoadScripts(fname[1..$], doScripts:doScripts, doActions:doActions);
+        auto gmk = new Gmk(fname[1..$]);
+        funcs ~= gmkLoadScripts(gmk, doScripts:doScripts, doActions:doActions);
+        if (procgmk !is null) procgmk(gmk);
         continue;
       }
       if (isDir(fname)) {

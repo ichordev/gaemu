@@ -315,6 +315,7 @@ private:
           bp[dest] = vpool.ptr[idx];
           break;
         case Op.ilit: // dest becomes ilit val (val: short) -- load small integer literal
+        case Op.slit:
           auto dest = opx.opDest;
           bp[dest] = opx.opILit;
           break;

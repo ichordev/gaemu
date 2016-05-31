@@ -1,0 +1,182 @@
+Unless otherwise stated, values are stored as 4 byte Little-Endian Integers
+When you see a { } it means that the number of bytes of the value inside is determined by the value of the outside.
+Unless otherwise stated, numbers are in *Decimal* format.
+? Represents a 4-byte longint with an unknown value.
+A number (such as 540 or 440) appear as-is in the file (as a longint).
+The purpose of these bytes are essentially unknown.
+k8: this is shitmaker version which introduced data structure with this format.
+Most words (like game_id and hspeed) will be actual variables stored,
+unless they begin with a capitol letter, like X or Hspeed, in which case
+GM keeps track of the value without a variable.
+
+
+540
+game_id
+room (the current room)
+0
+score (0 default)
+lives (-1 default)
+(double) health
+cursor_sprite (deprecated, default of -1)
+Steps since Game Start
+1
+440
+Number of variables
+{
+ Memory address
+ Type (0 = real, 1 = string)
+ (double) Real Value
+ How long String Value is { String Value }
+ Number of Rows (0 if this is only element)
+ {
+  Number of Columns
+  0 (x4 - these 4 0's only appear on the first run)
+  (Columns - 1 on first run, Columns thereafter) {
+   Type (0 = real, 1 = string)
+   (double) Real Value
+   How long String Value is { String Value }
+  }
+ }
+}
+How many room ID's there are
+{
+ Remember this room?
+ {
+  540
+  How long room_caption is { room_caption }
+  room_width
+  room_height
+  room_speed
+  room_persistent
+  background_color
+  background_showcolor
+  How long "Creation code" is { "Creation code" }
+  How many Backgrounds there are (always 8)
+  {
+   background_visible
+   background_foreground
+   background_index (-1 for none)
+   (double) background_x
+   (double) background_y
+   background_htiled
+   background_vtiled
+   (double) background_xscale
+   (double) background_yscale
+   (double) background_hspeed
+   (double) background_vspeed
+   background_blend
+   (double) background_alpha
+  }
+  ?
+  How many Views there are (always 8)
+  {
+   view_visible
+   view_xview
+   view_yview
+   view_wview
+   view_hview
+   view_xport
+   view_yport
+   view_wport
+   view_hport
+   (double) view_angle
+   view_hborder
+   view_vborder
+   view_hspeed
+   view_vspeed
+   view_object (-1 for none)
+  }
+  instance_count
+  {
+   id
+   sprite_index
+   (double) image_index
+   (double) image_speed
+   (double) image_xscale
+   (double) image_yscale
+   (double) image_angle
+   (double) image_alpha
+   image_blend
+   mask_index
+   (double) depth
+   Has Sprite (as opposed to a circle with a questionmark)
+   (double) x
+   (double) y
+   (double) xstart
+   (double) ystart
+   (double) xprevious
+   (double) yprevious
+   (double) direction
+   (double) speed
+   (double) friction
+   (double) gravity_direction
+   (double) gravity
+   (double) hspeed
+   (double) vspeed
+   bbox_left
+   bbox_right
+   bbox_top
+   bbox_bottom
+   visible
+   solid
+   persistent
+   object_index
+   (12) {
+    alarm
+   }
+   0
+   0
+   path_index
+   (double) path_position
+   (double) path_positionprevious
+   (double) path_speed
+   (double) path_scale
+   (double) path_orientation
+   path_endaction
+   (double) Path x (eg if relative, set to (x,y), if absolute, set to (0,0))
+   (double) Path y
+   timeline_index
+   (double) timeline_position
+   (double) timeline_speed
+   How long "Instance Creation Code" is { "Instance Creation Code" }
+   440
+   Number of variables
+   {
+    Memory address
+    Type (0 = real, 1 = string)
+    (double) Real Value
+    How long String Value is { String Value }
+    Number of Rows (0 if this is only element)
+    {
+     Number of Columns
+     0 (x4 - these 4 0's only appear on the first run)
+     (Columns - 1 on first run, Columns thereafter) {
+      Type (0 = real, 1 = string)
+      (double) Real Value
+      How long String Value is { String Value }
+     }
+    }
+   }
+  }
+  0 (seems to be alternative instanses - looking into it)
+  Number of Tiles
+  {
+   (double) X
+   (double) Y
+   Background
+   Left
+   Top
+   Width
+   Height
+   (double) Depth
+   (double) ID
+   (double) Xscale
+   (double) Yscale
+   Blend
+   (double) Alpha
+   Visible
+  }
+ }
+}
+Last placed Instance ID (100000 = none, 100001 = first)
+Last placed Tile ID (10000000 = none, 10000001 = first)

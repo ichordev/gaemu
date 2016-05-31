@@ -1,0 +1,93 @@
+-- Raw Format --
+Length of Zlib Data { Zlib Data }
+
+-----------------------------------------
+-- Base Format (after Zlib extraction) --
+-----------------------------------------
+
+> *Export Count Note: For each Primary Resource Grouping, the name and ID
+information of each Resource is exported regardless of whether it was
+selected for export or not. The remainder of the information, however, is
+omitted unless the Resource Grouping is selected for export.
+
+GM Version needed (800)
+Whether Sprites was selected for export
+Number of Sprites* (*see Export Count Note above)
+{
+ Whether Sprite of this ID exists or not
+ {
+  (Str) Name
+  (double) Last time this Sprite was changed
+  <if export>  {
+   GM version needed for the following info (400/542/800)
+   X Origin
+   ...
+   Separate Collision Masks
+  }
+ }
+}
+
+Whether Sounds was selected for export
+Number of Sounds*
+
+Whether Backgrounds was selected for export
+Number of Backgrounds*
+
+Whether Paths was selected for export
+Number of Paths*
+
+Whether Scripts was selected for export
+Number of Scripts*
+
+Whether Fonts was selected for export
+Number of Fonts*
+
+Whether Time Lines was selected for export
+Number of Time Lines*
+
+Whether Objects was selected for export
+Number of Objects*
+
+Whether Rooms was selected for export
+Number of Rooms*
+
+Whether Constants was selected for export
+(double) Last time Constants were changed
+<if export> { //Constants are dependant on their export status
+ Number of Constants
+ {
+  (Str) Name
+  (Str) Value
+ }
+}
+
+Whether Include Files was selected for export
+Number of Include Files
+
+Whether Extension Packages was selected for export
+Number of Extension Packages
+
+Whether Trigger Events was selected for export
+(double) Last time Trigger Events were changed
+Number of Trigger Events
+
+Whether Game Information was selected for export
+(double) Last time Game Information was changed
+<if export> {
+ Length of Game Information (from version to and including RTF)
+ GM version needed (800)
+ Background Color
+ ...
+ (Str) Game Info RTF
+}
+
+Whether Global Game Settings was selected for export
+(double) Last time Global Game Settings were changed
+<if export> {
+ Length of Global Game Settings (from version to and including Last time changed)
+ GM version needed (800)
+ Start in full-screen mode (0)
+ ...
+ (Str) Description
+ (double) Last time Global Game Settings were changed
+}
