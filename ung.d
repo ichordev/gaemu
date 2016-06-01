@@ -203,6 +203,27 @@ void exportBg (Gmk gmk, GMBackground o, string dir) {
 }
 
 
+void exportScript (Gmk gmk, GMScript o, string dir) {
+  import std.conv : to;
+  import std.file;
+  import std.path;
+  import std.string : format, replace;
+
+  try { mkdirRecurse(dir.dirName); } catch (Exception) {}
+  auto fo = File(dir~".gml", "w");
+  string code = o.code;
+  while (code.length && code[$-1] <= ' ') code = code[0..$-1];
+  bool skip = true;
+  foreach (string s; code.byLine) {
+    //while (s.length && s[0] <= ' ') s = s[1..$];
+    while (s.length && s[$-1] <= ' ') s = s[0..$-1];
+    if (s.length == 0 && skip) continue;
+    skip = false;
+    fo.writeln(s);
+  }
+}
+
+
 void main () {
   import std.path : buildPath;
   auto gmk = new Gmk("/home/ketmar/back/D/prj/spel/spelunky_collection/yasmk8/yasm_k8.gmk");
@@ -235,7 +256,18 @@ void main () {
       writeln(o.name, " : ", path);
       gmk.exportBg(o, buildPath(undir, path));
     } else {
-      assert(0, "sprite '"~o.name~"' has no path!");
+      assert(0, "background '"~o.name~"' has no path!");
+    }
+    return false;
+  });
+
+  gmk.forEachScript((o) {
+    auto path = gmk.tree.pathForName(GMResTree.Node.Type.Script, o.name);
+    if (path.length) {
+      writeln(o.name, " : ", path);
+      gmk.exportScript(o, buildPath(undir, path));
+    } else {
+      assert(0, "script '"~o.name~"' has no path!");
     }
     return false;
   });
