@@ -178,9 +178,35 @@ void exportSprite (Gmk gmk, GMSprite o, string dir) {
 }
 
 
+void exportBg (Gmk gmk, GMBackground o, string dir) {
+  import std.conv : to;
+  import std.file;
+  import std.path;
+  import std.string : format, replace;
+
+  try { mkdirRecurse(dir); } catch (Exception) {}
+  {
+    auto fo = File(buildPath(dir, "sprite.ini"), "w");
+    //fo.writeln("name=", o.name);
+    if (o.tileset) {
+      fo.writeln("tileset=true");
+      // default: 16x16
+      fo.writeln("tileWidth=", o.tileWidth);
+      fo.writeln("tileHeight=", o.tileHeight);
+    }
+    if (o.xofs || o.yofs) fo.writeln("ofs=", o.xofs, " ", o.yofs);
+    if (o.xsep || o.ysep) fo.writeln("sep=", o.xsep, " ", o.ysep);
+  }
+
+  // export image
+  writePng(buildPath(dir, "image.png"), o.image);
+}
+
+
 void main () {
   import std.path : buildPath;
   auto gmk = new Gmk("/home/ketmar/back/D/prj/spel/spelunky_collection/yasmk8/yasm_k8.gmk");
+
   gmk.forEachObject((o) {
     auto path = gmk.tree.pathForName(GMResTree.Node.Type.Object, o.name);
     if (path.length) {
@@ -191,11 +217,23 @@ void main () {
     }
     return false;
   });
+
   gmk.forEachSprite((o) {
     auto path = gmk.tree.pathForName(GMResTree.Node.Type.Sprite, o.name);
     if (path.length) {
       writeln(o.name, " : ", path);
       gmk.exportSprite(o, buildPath(undir, path));
+    } else {
+      assert(0, "sprite '"~o.name~"' has no path!");
+    }
+    return false;
+  });
+
+  gmk.forEachBg((o) {
+    auto path = gmk.tree.pathForName(GMResTree.Node.Type.Background, o.name);
+    if (path.length) {
+      writeln(o.name, " : ", path);
+      gmk.exportBg(o, buildPath(undir, path));
     } else {
       assert(0, "sprite '"~o.name~"' has no path!");
     }
