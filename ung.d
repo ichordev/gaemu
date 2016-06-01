@@ -224,6 +224,113 @@ void exportScript (Gmk gmk, GMScript o, string dir) {
 }
 
 
+void exportRoom (Gmk gmk, GMRoom o, string dir) {
+  import std.conv : to;
+  import std.file;
+  import std.path;
+  import std.string : format, replace, strip;
+
+  try { mkdirRecurse(dir.dirName); } catch (Exception) {}
+  if (o.createcode.strip.length) {
+    auto fs = File(dir~".gml", "w");
+    string code = o.createcode;
+    while (code.length && code[$-1] <= ' ') code = code[0..$-1];
+    bool skip = true;
+    foreach (string s; code.byLine) {
+      //while (s.length && s[0] <= ' ') s = s[1..$];
+      while (s.length && s[$-1] <= ' ') s = s[0..$-1];
+      if (s.length == 0 && skip) continue;
+      skip = false;
+      fs.writeln(s);
+    }
+  }
+  auto fo = File(dir~".gmr", "w");
+  if (o.caption.length != 0) fo.writeln("caption=", o.caption.quote);
+  fo.writeln("width=", o.width);
+  fo.writeln("height=", o.height);
+  fo.writeln("speed=", o.speed);
+  fo.writeln("persistent=", o.persistent);
+  if (o.xsnap || o.ysnap) fo.writeln("snap=", o.xsnap, " ", o.ysnap);
+  if (o.isogrid) fo.writeln("isogrid=", o.isogrid);
+  fo.writeln("drawbgcolor=", o.drawbgcolor);
+  fo.writefln("bgcolor=$%08X", o.bgcolor);
+  fo.writeln("viewsEnabled=", o.viewsEnabled);
+  fo.writeln("tileWidth=", o.tilew);
+  fo.writeln("tileHeight=", o.tileh);
+  if (o.xtofs || o.ytofs) fo.writeln("tileOfs=", o.xtofs, " ", o.ytofs);
+  if (o.xtsep || o.ytsep) fo.writeln("tileSep=", o.xtsep, " ", o.ytsep);
+
+  // backgrounds
+  foreach (immutable idx, ref bg; o.backs) {
+    if (bg.bgimageidx < 0) continue;
+    fo.writeln;
+    fo.writefln("back%s=%s", idx, gmk.bgByNum(bg.bgimageidx).name);
+    fo.writefln("back%s=%s %s", idx, bg.x, bg.y);
+    fo.writefln("back%s_visible=%s", idx, bg.visibleOnStart);
+    if (bg.fgimage) fo.writefln("back%s_foreground=%s", idx, bg.fgimage);
+    fo.writefln("back%s_tile=%s %s", idx, bg.xtile, bg.ytile);
+    fo.writefln("back%s_speed=%s %s", idx, bg.xspeed, bg.yspeed);
+    if (bg.stretch) fo.writefln("back%s_stretch=%s", idx, bg.stretch);
+  }
+
+  // views
+  /* default:
+   * view2=0 0
+   * view2_width=640
+   * view2_height=480
+   * view2_visible=false
+   * view2_port=0 0 640 480
+   * view2_border=32 32
+   * view2_space=-1 -1
+   */
+  foreach (immutable idx, ref v; o.views) {
+    if (v.x == 0 && v.y == 0 &&
+        v.width == 640 && v.height == 480 &&
+        !v.visibleOnStart &&
+        v.portx == 0 && v.porty == 0 && v.portw == v.width && v.porth == v.height &&
+        v.xborder == 32 && v.yborder == 32 &&
+        v.xspace == -1 && v.yspace == -1)
+    {
+      // skip defaults
+      continue;
+    }
+    fo.writeln;
+    fo.writefln("view%s=%s %s", idx, v.x, v.y);
+    fo.writefln("view%s_width=%s", idx, v.width);
+    fo.writefln("view%s_height=%s", idx, v.height);
+    fo.writefln("view%s_visible=%s", idx, v.visibleOnStart);
+    fo.writefln("view%s_port=%s %s %s %s", idx, v.portx, v.porty, v.portw, v.porth);
+    fo.writefln("view%s_border=%s %s", idx, v.xborder, v.yborder);
+    fo.writefln("view%s_space=%s %s", idx, v.xspace, v.yspace);
+    if (v.objfollow >= 0) fo.writefln("view%s_follow=%s", idx, gmk.objByNum(v.objfollow).name);
+  }
+
+  // tiles
+  if (o.tiles.length) {
+    fo.writeln;
+    foreach (immutable idx, ref t; o.tiles) {
+      fo.writeln;
+      fo.writefln("tile%s=%s %s %s", idx, gmk.bgByNum(t.bgidx).name, t.x, t.y);
+      fo.writefln("tile%s_tilerc=%s %s %s %s", idx, t.xtile, t.ytile, t.wtile, t.htile);
+      fo.writefln("tile%s_layer=%s", idx, t.layer);
+      //fo.writefln("tile%s_id=%s", idx, t.id); // starting from 10000000
+      if (t.locked) fo.writefln("tile%s_locked=%s", idx, t.locked);
+    }
+  }
+
+  if (o.insts.length) {
+    fo.writeln;
+    foreach (immutable idx, ref i; o.insts) {
+      //fo.writeln;
+      fo.writefln("inst%s=%s %s %s", idx, gmk.objByNum(i.objidx).name, i.x, i.y);
+      //fo.writefln("inst%s_id=%s", idx, i.id); // starting from 100000
+      if (i.locked) fo.writefln("inst%s_locked=%s", idx, i.locked);
+      if (i.createcode.strip.length) assert(0);
+    }
+  }
+}
+
+
 void main () {
   import std.path : buildPath;
   auto gmk = new Gmk("/home/ketmar/back/D/prj/spel/spelunky_collection/yasmk8/yasm_k8.gmk");
@@ -268,6 +375,17 @@ void main () {
       gmk.exportScript(o, buildPath(undir, path));
     } else {
       assert(0, "script '"~o.name~"' has no path!");
+    }
+    return false;
+  });
+
+  gmk.forEachRoom((o) {
+    auto path = gmk.tree.pathForName(GMResTree.Node.Type.Room, o.name);
+    if (path.length) {
+      writeln(o.name, " : ", path);
+      gmk.exportRoom(o, buildPath(undir, path));
+    } else {
+      assert(0, "room '"~o.name~"' has no path!");
     }
     return false;
   });
