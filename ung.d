@@ -85,7 +85,7 @@ void exportObject (Gmk gmk, GMObject o, string dir) {
   import std.conv : to;
   import std.file;
   import std.path;
-  import std.string : format, replace;
+  import std.string : format, replace, toLower;
 
   try { mkdirRecurse(dir); } catch (Exception) {}
   {
@@ -102,8 +102,52 @@ void exportObject (Gmk gmk, GMObject o, string dir) {
   foreach (immutable etidx, auto evl; o.events[]) {
     foreach (immutable eidx, auto ev; evl) {
       // we HAVE to export empty events, as they prevents inherited events to run
-      auto fo = File(buildPath(dir, "%s_%03s.gma".format(cast(GMEvent.Type)etidx, eidx*10)), "w");
-      exportActions(gmk, fo, o, eidx, ev, dir);
+      string fname;
+      switch (etidx) {
+        case GMEvent.Type.ev_create:
+          assert(ev.id == 0);
+          fname = buildPath(dir, "%s.gma".format(cast(GMEvent.Type)etidx));
+          break;
+        case GMEvent.Type.ev_destroy:
+          assert(ev.id == 0);
+          fname = buildPath(dir, "%s.gma".format(cast(GMEvent.Type)etidx));
+          break;
+        case GMEvent.Type.ev_alarm:
+          assert(ev.id < 12);
+          fname = buildPath(dir, "%s_%02s.gma".format(cast(GMEvent.Type)etidx, ev.id));
+          break;
+        case GMEvent.Type.ev_step:
+               if (ev.id == 0) fname = buildPath(dir, "%s_normal.gma".format(cast(GMEvent.Type)etidx));
+          else if (ev.id == 1) fname = buildPath(dir, "%s_begin.gma".format(cast(GMEvent.Type)etidx));
+          else if (ev.id == 2) fname = buildPath(dir, "%s_end.gma".format(cast(GMEvent.Type)etidx));
+          else assert(0);
+          break;
+        case GMEvent.Type.ev_collision:
+          fname = buildPath(dir, "%s_with_%s.gma".format(cast(GMEvent.Type)etidx, gmk.objByNum(ev.id).name));
+          break;
+        case GMEvent.Type.ev_keyboard:
+        case GMEvent.Type.ev_keypress:
+        case GMEvent.Type.ev_keyrelease:
+          if (auto kn = ev.id in evKeyNames) fname = buildPath(dir, "%s_%s.gma".format(cast(GMEvent.Type)etidx, (*kn).replace(" ", "_").toLower));
+          else assert(0, "wtf key "~to!string(ev.id));
+          break;
+        case GMEvent.Type.ev_mouse:
+          if (auto mn = ev.id in evMouseNames) fname = buildPath(dir, "%s_%s.gma".format(cast(GMEvent.Type)etidx, (*mn).replace(" ", "_").toLower));
+          else assert(0, "wtf mouse "~to!string(ev.id));
+          break;
+        case GMEvent.Type.ev_other:
+          if (auto on = ev.id in evOtherNames) fname = buildPath(dir, "%s_%s.gma".format(cast(GMEvent.Type)etidx, (*on).replace(" ", "_").toLower));
+          else assert(0, "wtf other "~to!string(ev.id));
+          break;
+        case GMEvent.Type.ev_draw:
+          assert(ev.id == 0);
+          fname = buildPath(dir, "%s.gma".format(cast(GMEvent.Type)etidx));
+          break;
+        case GMEvent.Type.ev_trigger:
+          assert(0, "no triggers yet");
+        default: assert(0);
+      }
+      exportActions(gmk, File(fname, "w"), o, eidx, ev, dir);
     }
   }
 }
