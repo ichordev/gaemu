@@ -453,7 +453,7 @@ class GMSomething { this () pure nothrow @safe @nogc {} }
 final class GMSprite : GMSomething {
 public:
   enum Shape { Precise, Rectangle, Disk, Diamond }
-  enum BBox { Automatic, Full, Manual }
+  enum BBoxType { Automatic, Full, Manual }
 
 public:
   uint idx;
@@ -464,7 +464,7 @@ public:
   Shape shape;
   ubyte alphaTolerance;
   bool separateCollisionMasks;
-  BBox bbox;
+  BBoxType bboxType;
   int bbleft, bbtop, bbright, bbbottom;
 
   this (uint aidx, VFile fl) { idx = aidx; load(fl); }
@@ -499,8 +499,8 @@ private:
     separateCollisionMasks = (fl.readNum!uint != 0);
     {
       auto v = fl.readNum!uint;
-      if (v > BBox.max) throw new Exception("invalid sprite bounding box type");
-      bbox = cast(BBox)v;
+      if (v > BBoxType.max) throw new Exception("invalid sprite bounding box type");
+      bboxType = cast(BBoxType)v;
     }
     bbleft = fl.readNum!int;
     bbright = fl.readNum!int;
@@ -1180,13 +1180,31 @@ final class GMResTree : GMSomething {
     Type type;
     string name;
     Node[] children; // for dir
-    GMSomething obj; // for others
+    //GMSomething obj; // for others
   }
 
   Node[Node.Type.max+1] roots;
 
 public:
   this (VFile fl) { load(fl); }
+
+  // this is slow, but i don't care for now
+  string pathForName (Node.Type type, const(char)[] name) {
+    string res;
+
+    bool descent (Node n) {
+      if (n is null) return false;
+      if (n.type == type && n.name == name) { /*res = "!"~n.name;*/ return true; }
+      if (n.type == Node.Type.Dir) {
+        foreach (Node c; n.children) if (descent(c)) { res = c.name~"/"~res; return true; }
+      }
+      return false;
+    }
+
+    foreach (Node c; roots[]) if (descent(c)) { res = c.name~"/"~res; break; }
+
+    return (res.length ? res[0..$-1] : res);
+  }
 
 private:
   void load (VFile fl) {
