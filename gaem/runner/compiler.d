@@ -29,17 +29,17 @@ import gaem.runner.objects;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-void compile (VM vm, NodeFunc fn) {
+void compile (NodeFunc fn) {
   import std.stdio : stdout;
-  auto spc = vm.code.length;
-  vm.doCompileFunc(fn);
-  while (spc < vm.code.length) spc += dumpInstr(stdout, spc, vm.code);
+  auto spc = VM.code.length;
+  doCompileFunc(fn);
+  while (spc < VM.code.length) spc += dumpInstr(stdout, spc, VM.code);
 }
 
 
 // ////////////////////////////////////////////////////////////////////////// //
 private:
-void doCompileFunc (VM vm, NodeFunc fn) {
+void doCompileFunc (NodeFunc fn) {
   int argvar (string s) {
     switch (s) {
       case "argument0": return 0;
@@ -79,55 +79,55 @@ void doCompileFunc (VM vm, NodeFunc fn) {
   }
 
   uint sid4name (string name) {
-    if (auto sptr = name in vm.scripts) {
+    if (auto sptr = name in VM.scripts) {
       return *sptr;
     } else {
-      auto sid = cast(uint)vm.scriptPCs.length;
-      if (sid > 32767) compileError(fn.loc, "too many vm.scripts");
-      assert(vm.scriptASTs.length == sid);
+      auto sid = cast(uint)VM.scriptPCs.length;
+      if (sid > 32767) compileError(fn.loc, "too many scripts");
+      assert(VM.scriptASTs.length == sid);
       // reserve slots
-      vm.scriptPCs ~= 0;
-      vm.scriptASTs ~= null;
-      vm.scriptNum2Name[sid] = name;
-      vm.scripts[name] = sid;
+      VM.scriptPCs ~= 0;
+      VM.scriptASTs ~= null;
+      VM.scriptNum2Name[sid] = name;
+      VM.scripts[name] = sid;
       return sid;
     }
   }
 
-  uint pc () { pragma(inline, true); return cast(uint)vm.code.length; }
-  void setpc (uint pc) { pragma(inline, true); vm.code.length = pc; vm.code.assumeSafeAppend; }
+  uint pc () { pragma(inline, true); return cast(uint)VM.code.length; }
+  void setpc (uint pc) { pragma(inline, true); VM.code.length = pc; VM.code.assumeSafeAppend; }
 
   uint emit (Op op, ubyte dest=0, ubyte op0=0, ubyte op1=0) {
-    auto res = cast(uint)vm.code.length;
-    vm.code ~= (op1<<24)|(op0<<16)|(dest<<8)|cast(ubyte)op;
+    auto res = cast(uint)VM.code.length;
+    VM.code ~= (op1<<24)|(op0<<16)|(dest<<8)|cast(ubyte)op;
     return res;
   }
 
   uint emit3Bytes (Op op, uint val) {
     assert(val <= 0xffffff);
-    auto res = cast(uint)vm.code.length;
-    vm.code ~= (val<<8)|cast(ubyte)op;
+    auto res = cast(uint)VM.code.length;
+    VM.code ~= (val<<8)|cast(ubyte)op;
     return res;
   }
 
   uint emit2Bytes (Op op, ubyte dest, short val) {
-    auto res = cast(uint)vm.code.length;
-    vm.code ~= (val<<16)|(dest<<8)|cast(ubyte)op;
+    auto res = cast(uint)VM.code.length;
+    VM.code ~= (val<<16)|(dest<<8)|cast(ubyte)op;
     return res;
   }
 
   uint emitJumpTo (uint addr, Op op=Op.jump) {
     assert(addr <= 0xffffff);
-    auto res = cast(uint)vm.code.length;
-    vm.code ~= cast(uint)op|(addr<<8);
+    auto res = cast(uint)VM.code.length;
+    VM.code ~= cast(uint)op|(addr<<8);
     return res;
   }
 
   // this starts "jump chain", return new chain id
   uint emitJumpChain (uint chain, Op op=Op.jump) {
     assert(chain <= 0xffffff);
-    auto res = cast(uint)vm.code.length;
-    vm.code ~= cast(uint)op|(chain<<8);
+    auto res = cast(uint)VM.code.length;
+    VM.code ~= cast(uint)op|(chain<<8);
     return res;
   }
 
@@ -135,14 +135,14 @@ void doCompileFunc (VM vm, NodeFunc fn) {
     assert(chain <= 0xffffff);
     assert(addr <= 0xffffff);
     while (chain) {
-      auto nc = op3Byte(vm.code[chain]);
-      vm.code[chain] = (vm.code[chain]&0xff)|(addr<<8);
+      auto nc = op3Byte(VM.code[chain]);
+      VM.code[chain] = (VM.code[chain]&0xff)|(addr<<8);
       chain = nc;
     }
   }
 
   void opReplace (uint pc, Op op, ubyte dest) {
-    vm.code[pc] = (vm.code[pc]&0xff_ff_00_00)|(dest<<8)|cast(ubyte)op;
+    VM.code[pc] = (VM.code[pc]&0xff_ff_00_00)|(dest<<8)|cast(ubyte)op;
   }
 
   assert(fn !is null);
@@ -380,7 +380,7 @@ void doCompileFunc (VM vm, NodeFunc fn) {
 
   findUninitialized();
 
-  /* here we will do very simple analysis for vm.code like
+  /* here we will do very simple analysis for code like
    *   var m, n;
    *   m = argument0;
    *   n = argument1;
@@ -475,22 +475,22 @@ void doCompileFunc (VM vm, NodeFunc fn) {
         return;
       }
       //FIXME: speed it up!
-      foreach (immutable idx, Real vp; vm.vpool) if (vp == v) { vpidx = cast(uint)idx; break; }
+      foreach (immutable idx, Real vp; VM.vpool) if (vp == v) { vpidx = cast(uint)idx; break; }
     } else if (v.isString) {
       // string
       //FIXME: speed it up!
       auto sid = v.getStrId;
       if (sid > short.max) compileError(loc, "too many strings");
-      //foreach (immutable idx, Real vp; vm.vpool) if (vp.isString && vp.getStrId == sid) { vpidx = cast(uint)idx; break; }
+      //foreach (immutable idx, Real vp; VM.vpool) if (vp.isString && vp.getStrId == sid) { vpidx = cast(uint)idx; break; }
       emit2Bytes(Op.slit, dest, cast(short)sid);
       return;
     } else {
       assert(0, "wtf?!");
     }
     if (vpidx == uint.max) {
-      vpidx = cast(uint)vm.vpool.length;
+      vpidx = cast(uint)VM.vpool.length;
       if (vpidx >= 0xffffff) compileError(loc, "too many constants");
-      vm.vpool ~= v;
+      VM.vpool ~= v;
     }
     if (vpidx < ushort.max) {
       emit2Bytes(Op.plit, dest, cast(ushort)vpidx);
@@ -543,9 +543,9 @@ void doCompileFunc (VM vm, NodeFunc fn) {
       // should be called right after `compileExpr()`
       Real checkILit (uint spc) {
         // small integer literal?
-        if (spc+1 == pc && vm.code[spc].opCode == Op.ilit) return cast(Real)vm.code[spc].opILit;
-        if (spc+2 == pc && vm.code[spc].opCode == Op.plit) return vm.vpool[vm.code[spc].op2Byte];
-        if (spc+3 == pc && vm.code[spc].opCode == Op.plit && vm.code[spc+1].opCode == Op.skip) return vm.vpool[vm.code[spc+1].op3Byte];
+        if (spc+1 == pc && VM.code[spc].opCode == Op.ilit) return cast(Real)VM.code[spc].opILit;
+        if (spc+2 == pc && VM.code[spc].opCode == Op.plit) return VM.vpool[VM.code[spc].op2Byte];
+        if (spc+3 == pc && VM.code[spc].opCode == Op.plit && VM.code[spc+1].opCode == Op.skip) return VM.vpool[VM.code[spc+1].op3Byte];
         return NaN(-1); // arbitrary value
       }
 
@@ -691,7 +691,7 @@ void doCompileFunc (VM vm, NodeFunc fn) {
         auto src = compileExpr(n.er);
         auto dest = compileExpr(n.el, wantref:true);
         //emit(Op.rstore, dest, src);
-        switch (vm.code[pc-1].opCode) {
+        switch (VM.code[pc-1].opCode) {
           //case Op.lref: // load slot reference to dest; op0: slot number
           //  opReplace(pc-1, Op.lstore, src); // store value *from* dest into local slot; op0: slot number
           //  break;
@@ -954,7 +954,7 @@ void doCompileFunc (VM vm, NodeFunc fn) {
       },
       (NodeFor n) {
         freeSlot(compileExpr(n.einit));
-        // generate vm.code like this:
+        // generate code like this:
         //   jump to "continue"
         //   body
         //  continue:
@@ -1077,7 +1077,7 @@ void doCompileFunc (VM vm, NodeFunc fn) {
           auto obc = breakChain;
           scope(exit) breakChain = obc;
           breakChain = 0;
-          // now generate vm.code for case nodes, skipping "default" by the way
+          // now generate code for case nodes, skipping "default" by the way
           foreach (immutable idx, ref ci; n.cases) {
             uint nodeSkipChain = 0;
             // check condition
@@ -1128,8 +1128,8 @@ void doCompileFunc (VM vm, NodeFunc fn) {
     );
   }
 
-  if (auto sid = fn.name in vm.scripts) {
-    if (vm.scriptPCs[*sid] < 0) return; // can't override built-in function
+  if (auto sid = fn.name in VM.scripts) {
+    if (VM.scriptPCs[*sid] < 0) return; // can't override built-in function
   }
 
   uint sid = sid4name(fn.name);
@@ -1140,7 +1140,7 @@ void doCompileFunc (VM vm, NodeFunc fn) {
   emit(Op.ret);
   fn.pce = pc;
   // patch enter
-  vm.code[startpc] = (locals.length<<24)|((maxUsedSlot+1)<<16)|(maxArgUsed<<8)|cast(ubyte)Op.enter;
-  vm.scriptPCs[sid] = startpc;
-  vm.scriptASTs[sid] = fn;
+  VM.code[startpc] = (locals.length<<24)|((maxUsedSlot+1)<<16)|(maxArgUsed<<8)|cast(ubyte)Op.enter;
+  VM.scriptPCs[sid] = startpc;
+  VM.scriptASTs[sid] = fn;
 }

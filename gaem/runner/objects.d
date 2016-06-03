@@ -40,9 +40,13 @@ package(gaem.runner) short allocateFieldId (string name) {
 
 
 private enum PredefinedFields = [
-  "object_parent",
+  "object_index", // int
   "id", // int
   "sprite_index", // int
+  "sprite_width", // int
+  "sprite_height", // int
+  "sprite_xoffset", // int
+  "sprite_yoffset", // int
   "image_index", // Real
   "image_speed", // Real
   "image_xscale", // Real
@@ -60,11 +64,11 @@ private enum PredefinedFields = [
   "yprevious", // Real
   "direction", // Real
   "speed", // Real
+  "hspeed", // Real
+  "vspeed", // Real
   "friction", // Real
   "gravity_direction", // Real
   "gravity", // Real
-  "hspeed", // Real
-  "vspeed", // Real
   "bbox_left", // int
   "bbox_right", // int
   "bbox_top", // int
@@ -72,40 +76,18 @@ private enum PredefinedFields = [
   "visible", // int
   "solid", // int
   "persistent", // int
-  "object_index", // int
-  "alarm0",
-  "alarm1",
-  "alarm2",
-  "alarm3",
-  "alarm4",
-  "alarm5",
-  "alarm6",
-  "alarm7",
-  "alarm8",
-  "alarm9",
-  "alarm10",
-  "alarm11",
-  /*
-  "object_parent",
-  "sprite_index",
-  "mask_index",
-  "solid",
-  "visible",
-  "depth",
-  "persistent",
-  "id",
-  "x",
-  "y",
-  "direction",
-  "image_index",
-  "image_xscale",
-  "image_yscale",
-  "image_angle",
-  "image_blend",
-  "image_alpha",
-  "sprite_width",
-  "sprite_height",
-  */
+  "alarm0", // int
+  "alarm1", // int
+  "alarm2", // int
+  "alarm3", // int
+  "alarm4", // int
+  "alarm5", // int
+  "alarm6", // int
+  "alarm7", // int
+  "alarm8", // int
+  "alarm9", // int
+  "alarm10", // int
+  "alarm11", // int
 ];
 
 
@@ -249,6 +231,7 @@ private:
   bool mDead;
   InstProxy[] proxies;
   Real[] fields;
+  Real[][] farrays; // arrays for fields
   ulong stepMark; // used in `with` management
 
   this (ObjectTpl aparent) {
@@ -276,6 +259,32 @@ private:
   }
 
 public:
+  Real get (uint fieldindex) {
+    pragma(inline, true);
+    return (fieldindex < fields.length ? fields.ptr[fieldindex] : Value());
+  }
+
+  Real get (uint fieldindex, uint i0, uint i1) {
+    if (i0 >= 32000 || i1 >= 32000) return Value(); // out of range
+    if (fieldindex >= farrays.length) return Value();
+    i0 |= i1<<16;
+    auto v = farrays.ptr[fieldindex];
+    return (i0 < v.length ? v.ptr[i0] : Value());
+  }
+
+  void set (Real val, uint fieldindex) {
+    if (fieldindex < fields.length) fields.ptr[fieldindex] = val;
+  }
+
+  void set (Real val, uint fieldindex, uint i0, uint i1) {
+    if (i0 >= 32000 || i1 >= 32000) return; // out of range
+    if (fieldindex >= fields.length) return;
+    i0 |= i1<<16;
+    if (farrays.length < fieldindex+1) farrays.length = fieldindex+1;
+    if (farrays.ptr[fieldindex].length < i0+1) farrays.ptr[fieldindex].length = i0+1;
+    farrays.ptr[fieldindex].ptr[i0] = val;
+  }
+
   bool isInstanceOf (int objid) {
     if (objid == ObjIdAll) return true;
     if (objid <= 0 || objid >= objects.length || mParent is null) return false;
