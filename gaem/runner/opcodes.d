@@ -139,7 +139,7 @@ uint dumpInstr (File fo, uint pc, const(uint)[] code) {
     case Dest2Bytes: fo.writefln("dest:%s; val:%s", code[pc].opDest, code[pc].op2Byte); break;
     case Dest3Bytes: fo.writefln("dest:%s; val:%s", code[pc].opDest, code[pc].op3Byte); break;
     case DestInt: fo.writefln("dest:%s; val:%s", code[pc].opDest, code[pc].opILit); break;
-    case DestJump: fo.writefln("0x%08x", code[pc].op3Byte); break;
+    case DestJump: fo.writefln("0x%08X", code[pc].op3Byte); break;
     case DestCall: fo.writefln("dest:%s; frame:%s; args:%s", code[pc].opDest, code[pc].opOp0, code[pc].opOp1); break;
     case Op0Op1: fo.writefln("op0:%s, op1:%s", code[pc].opOp0, code[pc].opOp1); break;
     case Op0: fo.writefln("op0:%s", code[pc].opOp0); break;
@@ -221,7 +221,8 @@ shared static this () {
     Op.i2store: DestOp0Op1, // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
     */
 
-    //Op.lref: DestOp0,
+    Op.oval: Dest2Bytes,
+
     Op.fval: DestOp0Op1,
     Op.i1val: DestOp0Op1,
     Op.i2val: DestOp0Op1,
