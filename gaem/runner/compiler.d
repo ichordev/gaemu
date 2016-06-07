@@ -841,7 +841,30 @@ void compileStatement (Node nn) {
       }
     },
     (NodeWith n) {
-      assert(0);
+      auto obc = breakChain;
+      auto occ = contChain;
+      auto cca = contChainIsAddr;
+      scope(exit) { breakChain = obc; contChain = occ; contChainIsAddr = cca; }
+      // object
+      auto iid = allocSlot(n.loc);
+      auto obs = compileExpr(n.e);
+      freeSlot(obs);
+      // iteration start
+      emit(Op.siter, iid, obs); // start instance iterator; dest: iterid; op0: objid or instid; next is jump over loop
+      breakChain = emitJumpChain(0); // jump over the loop
+      contChain = 0;
+      contChainIsAddr = false;
+      // loop body
+      auto bpc = pc;
+      compileStatement(n.ebody);
+      // continue point
+      fixJumpChain(contChain, pc);
+      emit(Op.niter, 0, iid);
+      emitJumpTo(bpc);
+      // end of loop, break point
+      fixJumpChain(breakChain, pc);
+      emit(Op.kiter, iid);
+      freeSlot(iid);
     },
     (NodeIf n) {
       auto cs = compileExpr(n.ec, asCond:true);
