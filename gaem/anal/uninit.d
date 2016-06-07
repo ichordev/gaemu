@@ -85,20 +85,6 @@ void analUninited (NodeFunc fn) {
     void processExpr (Node n, bool asAss=false) {
       if (n is null) return;
       visitNodes(n, (Node nn) {
-        if (auto n = cast(NodeBinaryAss)nn) {
-          if (cast(NodeId)n.el is null && cast(NodeDot)n.el is null && cast(NodeIndex)n.el is null) {
-            message(fn, nn.loc, "assignment to rvalue");
-            return VisitRes.SkipChildren;
-          }
-          processExpr(n.er); // it is calculated first
-          if (auto did = cast(NodeId)n.el) {
-            inited[did.name] = true;
-            used[did.name] = true;
-          } else {
-            processExpr(n.el, asAss:true);
-          }
-          return VisitRes.SkipChildren;
-        }
         if (auto id = cast(NodeId)nn) {
           if (argvar(id.name) < 0) {
             if (!asAss && id.name in locals && id.name !in inited) {
@@ -134,6 +120,19 @@ void analUninited (NodeFunc fn) {
           }
         },
         (NodeStatementEmpty n) {},
+        (NodeStatementAss n) {
+          if (cast(NodeId)n.el is null && cast(NodeDot)n.el is null && cast(NodeIndex)n.el is null) {
+            message(fn, nn.loc, "assignment to rvalue");
+            return;
+          }
+          processExpr(n.er); // it is calculated first
+          if (auto did = cast(NodeId)n.el) {
+            inited[did.name] = true;
+            used[did.name] = true;
+          } else {
+            processExpr(n.el, asAss:true);
+          }
+        },
         (NodeStatementExpr n) { processExpr(n.e); },
         (NodeReturn n) { processExpr(n.e); },
         (NodeWith n) {
@@ -158,10 +157,10 @@ void analUninited (NodeFunc fn) {
         },
         (NodeStatementBreakCont n) {},
         (NodeFor n) {
-          processExpr(n.einit);
+          processStatement(n.einit);
           // "next" and "cond" can't contain assignments, so it's safe here
           processExpr(n.econd);
-          processExpr(n.enext);
+          processStatement(n.enext);
           // yet body can be executed zero times, so...
           auto before = inited.dup;
           processStatement(n.ebody);

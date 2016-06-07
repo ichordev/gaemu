@@ -31,6 +31,7 @@ void analWith (NodeFunc fn) {
         (NodeVarDecl n) {},
         (NodeBlock n) { foreach (Node st; n.stats) anal(st); },
         (NodeStatementEmpty n) {},
+        (NodeStatementAss n) { anal(n.el); anal(n.er); },
         (NodeStatementExpr n) { anal(n.e); },
         (NodeReturn n) { anal(n.e); },
         (NodeWith n) {
@@ -76,7 +77,7 @@ void analWith (NodeFunc fn) {
       selectNode!(void)(nn,
         (NodeLiteral n) {},
         (NodeUnary n) { anal(n.e); },
-        (NodeBinaryAss n) { anal(n.el); anal(n.er); },
+        (NodeStatementAss n) { anal(n.el); anal(n.er); },
         (NodeBinary n) { anal(n.el); anal(n.er); },
         (NodeFCall n) {
           anal(n.fe);

@@ -20,6 +20,7 @@ module gaem.runner.vm is aliced;
 import std.stdio : File;
 import std.traits;
 
+import gaem.ungmk;
 import gaem.parser;
 
 import gaem.runner.strpool;
@@ -66,6 +67,7 @@ private:
   __gshared PrimDg[] prims; // by number
   __gshared Real[] vpool; // pool of values
   __gshared Real[] globals;
+  __gshared Gmk gmk;
 
 
   shared static this () {
@@ -76,6 +78,18 @@ private:
   }
 
 static public:
+  void setGmk (Gmk agmk) {
+    assert(agmk !is null);
+    assert(gmk is null);
+    gmk = agmk;
+  }
+
+  int objId (string name) {
+    if (gmk is null) return -1;
+    if (auto o = gmk.objByName(name)) return o.idx;
+    return -1;
+  }
+
   void opIndexAssign(DG) (DG dg, string name) if (isCallable!DG) {
     assert(name.length > 0);
     uint sid;
@@ -444,12 +458,14 @@ Real doExec (uint pc) {
       //case Op.lstore: // store value *from* dest into local slot; op0: slot number
       //  bp[opx.opOp0] = bp[opx.opDest];
       //  break;
+      /*
       case Op.fstore: // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
         assert(0);
       case Op.i1store: // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays
         assert(0);
       case Op.i2store: // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
         assert(0);
+      */
 
       //case Op.oload: // load object field to dest; op0: int reg (obj id; -666: global object); op1: int reg (field id)
       //case Op.iload: // load indexed (as iref)

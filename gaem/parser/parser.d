@@ -104,6 +104,8 @@ final class Parser {
     static private template BuildOps(T...) {
       static if (T.length == 0)
         enum BuildOps = "";
+      else static if (T[0] == "Ass")
+        enum BuildOps = "Keyword."~T[0]~", NodeStatement"~T[0]~", "~BuildOps!(T[1..$]);
       else
         enum BuildOps = "Keyword."~T[0]~", NodeBinary"~T[0]~", "~BuildOps!(T[1..$]);
     }
@@ -219,20 +221,20 @@ final class Parser {
   }
 
   // this can be assign expression, check it
-  Node parseAssExpr () {
+  NodeStatement parseAssExpr () {
     auto e = parseExprLogOr(true); // stop on assign
     auto loc = lex.loc;
-    if (lex.eatKw(Keyword.Ass)) return new NodeBinaryAss(loc, e, parseExpr());
-    if (lex.eatKw(Keyword.AssAdd)) return new NodeBinaryAss(loc, e, new NodeBinaryAdd(lex.loc, e, parseExpr()), true);
-    if (lex.eatKw(Keyword.AssSub)) return new NodeBinaryAss(loc, e, new NodeBinarySub(lex.loc, e, parseExpr()), true);
-    if (lex.eatKw(Keyword.AssMul)) return new NodeBinaryAss(loc, e, new NodeBinaryMul(lex.loc, e, parseExpr()), true);
-    if (lex.eatKw(Keyword.AssDiv)) return new NodeBinaryAss(loc, e, new NodeBinaryRDiv(lex.loc, e, parseExpr()), true);
-    if (lex.eatKw(Keyword.AssBitAnd)) return new NodeBinaryAss(loc, e, new NodeBinaryBitAnd(lex.loc, e, parseExpr()), true);
-    if (lex.eatKw(Keyword.AssBitOr)) return new NodeBinaryAss(loc, e, new NodeBinaryBitOr(lex.loc, e, parseExpr()), true);
-    if (lex.eatKw(Keyword.AssBitXor)) return new NodeBinaryAss(loc, e, new NodeBinaryBitXor(lex.loc, e, parseExpr()), true);
-    if (lex.eatKw(Keyword.AssLShift)) return new NodeBinaryAss(loc, e, new NodeBinaryLShift(lex.loc, e, parseExpr()), true);
-    if (lex.eatKw(Keyword.AssRShift)) return new NodeBinaryAss(loc, e, new NodeBinaryRShift(lex.loc, e, parseExpr()), true);
-    return e;
+    if (lex.eatKw(Keyword.Ass)) return new NodeStatementAss(loc, e, parseExpr());
+    if (lex.eatKw(Keyword.AssAdd)) return new NodeStatementAss(loc, e, new NodeBinaryAdd(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssSub)) return new NodeStatementAss(loc, e, new NodeBinarySub(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssMul)) return new NodeStatementAss(loc, e, new NodeBinaryMul(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssDiv)) return new NodeStatementAss(loc, e, new NodeBinaryRDiv(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssBitAnd)) return new NodeStatementAss(loc, e, new NodeBinaryBitAnd(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssBitOr)) return new NodeStatementAss(loc, e, new NodeBinaryBitOr(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssBitXor)) return new NodeStatementAss(loc, e, new NodeBinaryBitXor(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssLShift)) return new NodeStatementAss(loc, e, new NodeBinaryLShift(lex.loc, e, parseExpr()), true);
+    if (lex.eatKw(Keyword.AssRShift)) return new NodeStatementAss(loc, e, new NodeBinaryRShift(lex.loc, e, parseExpr()), true);
+    return new NodeStatementExpr(e);
   }
 
   // ////////////////////////////////////////////////////////////////////// //
@@ -498,7 +500,7 @@ final class Parser {
     }
     // should be an expression
    estat:
-    auto res = new NodeStatementExpr(parseAssExpr());
+    auto res = parseAssExpr();
     endOfStatement();
     return res;
   }

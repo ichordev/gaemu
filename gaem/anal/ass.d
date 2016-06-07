@@ -30,6 +30,7 @@ void analAss (NodeFunc fn) {
         (NodeVarDecl n) {},
         (NodeBlock n) { foreach (Node st; n.stats) anal(st); },
         (NodeStatementEmpty n) {},
+        (NodeStatementAss n) { anal(n.el, n.loc/*hack*/); anal(n.er, n.loc/*hack*/); },
         (NodeStatementExpr n) { anal(n.e); },
         (NodeReturn n) { anal(n.e); },
         (NodeWith n) { anal(n.e); anal(n.ebody); },
@@ -55,7 +56,6 @@ void analAss (NodeFunc fn) {
           if (wasCmp.valid) message(fn, n.loc, ": double logic op in expression, previous was at ", wasCmp.toStringNoFile);
           anal(n.el, n.loc); anal(n.er, n.loc);
         },
-        (NodeBinaryAss n) { anal(n.el, n.loc/*hack*/); anal(n.er, n.loc/*hack*/); },
         (NodeBinary n) { anal(n.el, wasCmp); anal(n.er, wasCmp); },
         (NodeFCall n) {
           anal(n.fe, wasCmp);

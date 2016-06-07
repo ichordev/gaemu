@@ -70,26 +70,28 @@ enum Op {
 
   ret, // dest is retvalue; it is copied to reg0; other stack items are discarded
 
+  oval, // load object value to dest; 2byte: object index
+        // this is used for `if (oPlayer1)` and such conditions
+        // "object" is any object here, including sprites, background, sounds...
+
   fval, // load field value; op0: obj id; op1: int! reg (field id)
   i1val, // load indexed value; op0: varref; op1: index
   i2val, // load indexed value; op0: varref; op1: first index; (op1+1): second index
 
   // ref+store will be replaced with this
-  //lstore, // store value *from* dest into local slot; op0: slot number
   fstore, // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
-  i1store, // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays
-  i2store, // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
 
-  // the following is used in `if (oObj)`
-  //TODO
-  bobji, // load boolean to dest: doesr this object has any alive instance?; op0: obj id
+  i1sfstore, // store value *from* dest into indexed reference in `self`; op0: fid; op1: index; can create arrays
+  i2sfstore, // store value *from* dest into indexed reference in `self`; op0: fid; op1: first index; (op1+1): second index; can create arrays
+
+  i1fstore, // store value *from* dest into indexed reference; op0: obj id; op1: index; can create arrays
+  i2fstore, // store value *from* dest into indexed reference; op0: obj id; op1: first index; (op1+1): second index; can create arrays
 
   // `with` is done by copying `self` to another reg, execute the code and restore `self`
-
   siter, // start instance iterator; dest: iterid; op0: objid or instid
          // this is special: it will skip next instruction if iteration has at least one item
          // next instruction is always jump, which skips the loop
-  niter, // dest is iterreg; do jump (pc is the same as in jump) if iteration is NOT complete
+  niter, // op0: is iterreg; next instruction is always jump, which continutes the loop
   kiter, // kill iterator, should be called to prevent memory leaks
 
   // so return from `with` should call kiter for all created iterators first
@@ -98,15 +100,6 @@ enum Op {
   // let VM to free all iterators from those slots on function exit
 
   lirint, // dest = lrint(op0): do lrint() (or another fast float->int conversion)
-
-  // as we are using refloads only in the last stage of assignment, they can create values
-  // there "ref" opcodes will be never seen in the final compiled code
-  // the compiler will change 'em to the corresponding stores
-  //lref, // load slot reference to dest; op0: slot number
-  fref, // load field reference; op0: obj id; op1: int! reg (field id); can create fields
-  i1ref, // load indexed reference; op0: varref; op1: index; can create arrays
-  i2ref, // load indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
-  //rstore, // store to op0-varref from op1
 }
 
 
@@ -149,6 +142,7 @@ uint dumpInstr (File fo, uint pc, const(uint)[] code) {
     case DestJump: fo.writefln("0x%08x", code[pc].op3Byte); break;
     case DestCall: fo.writefln("dest:%s; frame:%s; args:%s", code[pc].opDest, code[pc].opOp0, code[pc].opOp1); break;
     case Op0Op1: fo.writefln("op0:%s, op1:%s", code[pc].opOp0, code[pc].opOp1); break;
+    case Op0: fo.writefln("op0:%s", code[pc].opOp0); break;
     default: assert(0);
   }
   return 1;
@@ -169,6 +163,7 @@ enum OpArgs {
   DestJump,
   DestCall,
   Op0Op1,
+  Op0,
 }
 
 __gshared immutable OpArgs[ubyte] opargs;
@@ -220,23 +215,27 @@ shared static this () {
     Op.ret: Dest,
 
     //Op.lstore: DestOp0Op1, // store value *from* dest into local slot; op0: slot number
+    /*
     Op.fstore: DestOp0Op1, // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
     Op.i1store: DestOp0Op1, // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays
     Op.i2store: DestOp0Op1, // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
+    */
 
     //Op.lref: DestOp0,
     Op.fval: DestOp0Op1,
     Op.i1val: DestOp0Op1,
     Op.i2val: DestOp0Op1,
 
-    Op.fref: DestOp0Op1,
-    Op.i1ref: DestOp0Op1,
-    Op.i2ref: DestOp0Op1,
+    Op.fstore: DestOp0Op1,
 
-    //Op.rstore: DestOp0,
+    Op.i1sfstore: DestOp0Op1,
+    Op.i2sfstore: DestOp0Op1,
+
+    Op.i1fstore: DestOp0Op1,
+    Op.i2fstore: DestOp0Op1,
 
     Op.siter: DestOp0,
-    Op.niter: DestJump,
+    Op.niter: Op0,
     Op.kiter: Dest,
 
     Op.lirint: DestOp0, // dest = lrint(op0): do lrint() (or another fast float->int conversion)

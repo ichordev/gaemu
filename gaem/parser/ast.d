@@ -198,29 +198,6 @@ mixin(BinaryOpMixin!("LogOr", "||", "Logic"));
 mixin(BinaryOpMixin!("LogAnd", "&&", "Logic"));
 mixin(BinaryOpMixin!("LogXor", "^^", "Logic"));
 
-class NodeBinaryAss : NodeBinary {
-  bool expanded; // this is expanded opOpAssign
-
-  this () {}
-  this (Node ael, Node aer) { super(ael, aer, "="); }
-  this (Loc aloc, Node ael, Node aer) { super(aloc, ael, aer, "="); }
-  this (Loc aloc, Node ael, Node aer, bool aexpanded) { expanded = aexpanded; super(aloc, ael, aer, "="); }
-
-  override string toStringInd (int indent) const {
-    string res = indentStr(indent)~el.toString~" ";
-    if (expanded) {
-      if (auto x = cast(NodeBinary)er) {
-        res ~= x.name~"= "~x.er.toString;
-      } else {
-        assert(0, "wtf?!");
-      }
-    } else {
-      res ~= "= "~er.toString;
-    }
-    return res;
-  }
-}
-
 // these nodes will never end up in AST, they are here for parser needs
 mixin(BinaryOpMixin!("And", "and", "Logic"));
 mixin(BinaryOpMixin!("Or", "or", "Logic"));
@@ -351,6 +328,30 @@ class NodeStatementEmpty : NodeStatement {
   this (Loc aloc) { loc = aloc; }
 
   override string toStringInd (int indent) const => indentStr(indent)~"{}";
+}
+
+
+// ////////////////////////////////////////////////////////////////////////// //
+class NodeStatementAss : NodeStatement {
+  Node el, er;
+  bool expanded; // this is expanded opOpAssign
+
+  this () {}
+  this (Loc aloc, Node ael, Node aer, bool aexpanded=false) { super(aloc); el = ael; er = aer; expanded = aexpanded; }
+
+  override string toStringInd (int indent) const {
+    string res = indentStr(indent)~el.toString~" ";
+    if (expanded) {
+      if (auto x = cast(NodeBinary)er) {
+        res ~= x.name~"= "~x.er.toString;
+      } else {
+        assert(0, "wtf?!");
+      }
+    } else {
+      res ~= "= "~er.toString;
+    }
+    return res;
+  }
 }
 
 

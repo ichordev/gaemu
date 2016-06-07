@@ -296,6 +296,18 @@ void analVars (NodeFunc fn) {
         },
         (NodeBlock n) { foreach (Node st; n.stats) anal(st); },
         (NodeStatementEmpty n) {},
+        (NodeStatementAss n) {
+          if (inWith) {
+            if (auto id = cast(NodeId)n.el) {
+              //writeln("*** ", id.name);
+              fields[id.name] = VarInfo(VarInfo.Type.Field, id.name);
+            } else {
+              //writeln("+++ ", n.el.toString, " : ", typeid(n.el).name);
+            }
+          }
+          anal(n.er);
+          anal(n.el, asAss:true);
+        },
         (NodeStatementExpr n) { anal(n.e); },
         (NodeReturn n) { anal(n.e); },
         (NodeWith n) {
@@ -323,18 +335,6 @@ void analVars (NodeFunc fn) {
       selectNode!(void)(nn,
         (NodeLiteral n) {},
         (NodeUnary n) { anal(n.e); },
-        (NodeBinaryAss n) {
-          if (inWith) {
-            if (auto id = cast(NodeId)n.el) {
-              //writeln("*** ", id.name);
-              fields[id.name] = VarInfo(VarInfo.Type.Field, id.name);
-            } else {
-              //writeln("+++ ", n.el.toString, " : ", typeid(n.el).name);
-            }
-          }
-          anal(n.er);
-          anal(n.el, asAss:true);
-        },
         (NodeBinary n) { anal(n.el); anal(n.er); },
         (NodeFCall n) {
           if (auto id = cast(NodeId)n.fe) {

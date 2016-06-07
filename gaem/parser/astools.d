@@ -43,6 +43,10 @@ Node visitNodes (Node nn, VisitRes delegate (Node n) dg) {
         return null;
       },
       (NodeStatementEmpty n) => null,
+      (NodeStatementAss n) {
+        if (auto r = visitNodes(n.er, dg)) return r;
+        return visitNodes(n.el, dg);
+      },
       (NodeStatementExpr n) => visitNodes(n.e, dg),
       (NodeReturn n) => visitNodes(n.e, dg),
       (NodeWith n) {

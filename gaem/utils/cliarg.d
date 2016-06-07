@@ -23,6 +23,10 @@ import gaem.ungmk;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
+public bool cliLoadGmkScripts = true;
+
+
+// ////////////////////////////////////////////////////////////////////////// //
 NodeFunc[] cliProcessArgs(Opts...) (ref string[] args, void delegate (Gmk gmk) procgmk=null) {
   NodeFunc[] funcs;
   bool nomore = false;
@@ -53,7 +57,9 @@ NodeFunc[] cliProcessArgs(Opts...) (ref string[] args, void delegate (Gmk gmk) p
         if (fname.length < 2) assert(0, "gmk file?");
         if (dumpFileNames) { import std.stdio; writeln("loading '", fname[1..$], "'..."); }
         auto gmk = new Gmk(fname[1..$]);
-        funcs ~= gmkLoadScripts(gmk, doScripts:doScripts, doActions:doActions);
+        if (cliLoadGmkScripts) {
+          funcs ~= gmkLoadScripts(gmk, doScripts:doScripts, doActions:doActions);
+        }
         if (procgmk !is null) procgmk(gmk);
         continue;
       }
