@@ -78,9 +78,7 @@ enum Op {
   i1fval, // load indexed value; op0: obj id; op1: xslots (int! field id, first index)
   i2fval, // load indexed value; op0: obj id; op1: xslots (int! field id, first index, second index)
 
-  // ref+store will be replaced with this
   fstore, // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
-
   i1fstore, // store value *from* dest into indexed reference; op0: obj id; op1: xslots (int! field id, first index)
   i2fstore, // store value *from* dest into indexed reference; op0: obj id; op1: xslots (int! field id, first index, second index)
 
@@ -88,8 +86,8 @@ enum Op {
   siter, // start instance iterator; dest: iterid; op0: objid or instid
          // this is special: it will skip next instruction if iteration has at least one item
          // next instruction is always jump, which skips the loop
-  niter, // op0: is iterreg; next instruction is always jump, which continutes the loop
-  kiter, // kill iterator, should be called to prevent memory leaks
+  niter, // dest: is iterreg; next instruction is always jump, which continues the loop
+  kiter, // kill iterator, should be called to restore `self` and `other`; dest: iterreg
 
   // so return from `with` should call kiter for all created iterators first
 
@@ -223,7 +221,7 @@ shared static this () {
     Op.i2fstore: DestOp0Op1,
 
     Op.siter: DestOp0,
-    Op.niter: Op0,
+    Op.niter: Dest,
     Op.kiter: Dest,
 
     Op.lirint: DestOp0, // dest = lrint(op0): do lrint() (or another fast float->int conversion)

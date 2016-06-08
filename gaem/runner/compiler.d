@@ -800,7 +800,7 @@ void lowerLeftAss (Node el, ubyte assVal) {
   compileVarStore(withStack[0], assVal, noLocalsCheck:true);
   // unwind `with`
   foreach (immutable idx; 0..its.length; reverse) {
-    emit(Op.niter, 0, its[idx]);
+    emit(Op.niter, its[idx]);
     emitJumpTo(spc[idx]);
     fixJumpChain(jchain[idx], pc);
     emit(Op.kiter, its[idx]);
@@ -892,7 +892,7 @@ void compileStatement (Node nn) {
       compileStatement(n.ebody);
       // continue point
       fixJumpChain(contChain, pc);
-      emit(Op.niter, 0, iid);
+      emit(Op.niter, iid);
       emitJumpTo(bpc);
       // end of loop, break point
       fixJumpChain(breakChain, pc);

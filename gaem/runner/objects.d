@@ -302,12 +302,15 @@ private:
   }
 
 public:
+  @property uint id () const pure nothrow @safe @nogc { return mId; }
+
+public:
   Real get (uint fieldindex) {
     pragma(inline, true);
     return (fieldindex < fields.length ? fields.ptr[fieldindex] : Value());
   }
 
-  Real get (uint fieldindex, uint i0, uint i1) {
+  Real get (uint fieldindex, uint i0, uint i1=0) {
     if (i0 >= 32000 || i1 >= 32000) return Value(); // out of range
     if (fieldindex >= farrays.length) return Value();
     i0 |= i1<<16;
@@ -319,7 +322,7 @@ public:
     if (fieldindex < fields.length) fields.ptr[fieldindex] = val;
   }
 
-  void set (Real val, uint fieldindex, uint i0, uint i1) {
+  void set (Real val, uint fieldindex, uint i0, uint i1=0) {
     if (i0 >= 32000 || i1 >= 32000) return; // out of range
     if (fieldindex >= fields.length) return;
     i0 |= i1<<16;
@@ -359,6 +362,7 @@ static:
     InstProxy cur; // current instance
     Instance si; // instance for single-instance iterator
     ulong step;
+    uint oldSelf;
   }
   private __gshared Iterator[] iters;
   private __gshared uint itersUsed = 1;
@@ -374,13 +378,14 @@ static:
     return iid;
   }
 
-  // create new iterator, return iid
-  uint newIterator (int objid) {
+  // create new iterator, return iid or 0
+  uint newIterator (int objid, uint aOldSelf) {
     if (itersUsed >= short.max) assert(0, "too many iterators");
     // instance id?
     if (objid >= IdStart) {
       if (auto i = cast(uint)objid in instById) {
         auto iid = newIId;
+        iters.ptr[iid].oldSelf = aOldSelf;
         iters.ptr[iid].si = *i;
         return iid;
       }
@@ -390,7 +395,7 @@ static:
     if (objid == ObjIdAll) {
       if (iall.head is null) return 0; // no instances yet
       auto iid = newIId;
-      with (iters.ptr[iid]) { step = curStep++; head = cur = iall.head; }
+      with (iters.ptr[iid]) { step = curStep++; head = cur = iall.head; oldSelf = aOldSelf; }
       return iid;
     }
     // "none" object?
@@ -399,7 +404,7 @@ static:
       // object class
       if (auto proxy = objects.ptr[objid].ilist.head) {
         auto iid = newIId;
-        with (iters.ptr[iid]) { step = curStep++; head = cur = proxy; }
+        with (iters.ptr[iid]) { step = curStep++; head = cur = proxy; oldSelf = aOldSelf; }
         return iid;
       }
     }
@@ -425,6 +430,11 @@ static:
       // bad instance (either dead, or newborn) move on
     } while (it.cur !is null);
     return 0; // no more instances
+  }
+
+  uint iteratorOldSelf (uint iid) {
+    pragma(inline, true);
+    return (iid == 0 || iid >= itersUsed ? 0 : iters.ptr[iid].oldSelf);
   }
 
   void freeAllIterators () {
@@ -457,6 +467,15 @@ static:
     for (;;) {
       if (!cur.self.mDead && dg(cur.self)) return cur.self;
       if ((cur = cur.next) is head) break;
+    }
+    return null;
+  }
+
+  Instance firstInstanceOf (int id) {
+    if (id >= IdStart) {
+      if (auto pid = cast(uint)id in instById) return *pid;
+    } else if (id > 0 && id < objects.length) {
+      if (auto px = objects.ptr[id].ilist.head) return px.self;
     }
     return null;
   }

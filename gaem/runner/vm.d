@@ -26,6 +26,7 @@ import gaem.parser;
 import gaem.runner.strpool;
 import gaem.runner.value;
 import gaem.runner.opcodes;
+import gaem.runner.objects;
 
 
 // ////////////////////////////////////////////////////////////////////////// //
@@ -425,46 +426,113 @@ Real doExec (uint pc) {
         debug(vm_exec) { import std.stdio : stderr; stderr.writeln("RET(", curframe.rval, "): ", rv); }
         break;
 
-      //as we are using refloads only in the last stage of assignment, they can create values
-      /*
-      case Op.lref: // load slot reference to dest
-        *cast(int*)bp[opx.opDest] = opx.opOp0;
+      case Op.oval: // load object value to dest; 2byte: object index
+        //TODO: backgrounds, sounds, etc
+        if (auto inst = Instance.firstInstanceOf(opx.op2Byte)) {
+          bp[opx.opDest] = inst.id;
+        } else {
+          bp[opx.opDest] = 0;
+        }
         break;
-      case Op.fref: // load field reference; op0: obj id; op1: int! reg (field id); can create fields
-        assert(0);
+
       case Op.fval: // load field value; op0: obj id; op1: int! reg (field id)
-        assert(0);
-      case Op.i1ref: // load indexed reference; op0: varref; op1: index; can create arrays
-        assert(0);
-      case Op.i2ref: // load indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
-        assert(0);
-      case Op.i1val: // load indexed value; op0: varref; op1: index
-        assert(0);
-      case Op.i2val: // load indexed value; op0: varref; op1: first index; (op1+1): second index
-        assert(0);
-
-      case Op.rstore: // store to op0-varref from op1
-        auto x = *cast(int*)bp[opx.opOp0];
-        assert(x >= 0 && x <= 255);
-        bp[x] = bp[opx.opOp1];
+        auto fid = *cast(uint*)(bp+opx.opOp1);
+        if (auto inst = Instance.firstInstanceOf(lrint(bp[opx.opOp0]))) {
+          auto v = inst.get(fid);
+          if (v.isUndef) runtimeError(cast(uint)(cptr-VM.code.ptr-1), "trying to read undefined field");
+          bp[opx.opDest] = v;
+        } else {
+          runtimeError(cast(uint)(cptr-VM.code.ptr-1), "trying to read field of invalid instance");
+        }
         break;
-      */
-      //case Op.lstore: // store value *from* dest into local slot; op0: slot number
-      //  bp[opx.opOp0] = bp[opx.opDest];
-      //  break;
-      /*
-      case Op.fstore: // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
-        assert(0);
-      case Op.i1store: // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays
-        assert(0);
-      case Op.i2store: // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
-        assert(0);
-      */
+      case Op.i1fval: // load indexed value; op0: obj id; op1: xslots (int! field id, first index)
+        auto fid = *cast(uint*)(bp+opx.opOp1);
+        if (auto inst = Instance.firstInstanceOf(lrint(bp[opx.opOp0]))) {
+          auto v = inst.get(fid, lrint(bp[opx.opOp1+1]));
+          if (v.isUndef) runtimeError(cast(uint)(cptr-VM.code.ptr-1), "trying to read undefined field");
+          bp[opx.opDest] = v;
+        } else {
+          runtimeError(cast(uint)(cptr-VM.code.ptr-1), "trying to read field of invalid instance");
+        }
+        break;
+      case Op.i2fval: // load indexed value; op0: obj id; op1: xslots (int! field id, first index, second index)
+        auto fid = *cast(uint*)(bp+opx.opOp1);
+        if (auto inst = Instance.firstInstanceOf(lrint(bp[opx.opOp0]))) {
+          auto v = inst.get(fid, lrint(bp[opx.opOp1+1]), lrint(bp[opx.opOp1+2]));
+          if (v.isUndef) runtimeError(cast(uint)(cptr-VM.code.ptr-1), "trying to read undefined field");
+          bp[opx.opDest] = v;
+        } else {
+          runtimeError(cast(uint)(cptr-VM.code.ptr-1), "trying to read field of invalid instance");
+        }
+        break;
 
-      //case Op.oload: // load object field to dest; op0: int reg (obj id; -666: global object); op1: int reg (field id)
-      //case Op.iload: // load indexed (as iref)
-      //case Op.mload: // load indexed (as mref)
-      default: assert(0);
+      case Op.fstore: // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
+        auto fid = *cast(uint*)(bp+opx.opOp1);
+        if (auto inst = Instance.firstInstanceOf(lrint(bp[opx.opOp0]))) {
+          inst.set(bp[opx.opDest], fid);
+        } else {
+          runtimeError(cast(uint)(cptr-VM.code.ptr-1), "trying to set field of invalid instance");
+        }
+        break;
+      case Op.i1fstore: // store value *from* dest into indexed reference; op0: obj id; op1: xslots (int! field id, first index)
+        auto fid = *cast(uint*)(bp+opx.opOp1);
+        if (auto inst = Instance.firstInstanceOf(lrint(bp[opx.opOp0]))) {
+          inst.set(bp[opx.opDest], fid, lrint(bp[opx.opOp1+1]));
+        } else {
+          runtimeError(cast(uint)(cptr-VM.code.ptr-1), "trying to set field of invalid instance");
+        }
+        break;
+      case Op.i2fstore: // store value *from* dest into indexed reference; op0: obj id; op1: xslots (int! field id, first index, second index)
+        auto fid = *cast(uint*)(bp+opx.opOp1);
+        if (auto inst = Instance.firstInstanceOf(lrint(bp[opx.opOp0]))) {
+          inst.set(bp[opx.opDest], fid, lrint(bp[opx.opOp1+1]), lrint(bp[opx.opOp1+2]));
+        } else {
+          runtimeError(cast(uint)(cptr-VM.code.ptr-1), "trying to set field of invalid instance");
+        }
+        break;
+
+      // `with` is done by copying `self` to another reg, execute the code and restore `self`
+      case Op.siter: // start instance iterator; dest: iterid; op0: objid or instid
+                     // this is special: it will skip next instruction if iteration has at least one item
+                     // next instruction is always jump, which skips the loop
+        // `self` will be copied to `other`, `other` should be saved
+        uint iid = Instance.newIterator(lrint(bp[opx.opOp0]), lrint(bp[VM.Slot.Other]));
+        *cast(uint*)(bp+opx.opDest) = iid;
+        if (iid) {
+          if (auto nxi = Instance.iteratorNext(iid)) {
+            ++cptr; // skip jump
+            bp[VM.Slot.Other] = bp[VM.Slot.Self];
+            bp[VM.Slot.Self] = nxi;
+            break;
+          }
+        }
+        // skip loop (execute jump)
+        //cptr = VM.code.ptr+(*cptr).op3Byte;
+        break;
+      case Op.niter: // op0: is iterreg; next instruction is always jump, which continues the loop
+        auto iid = *cast(uint*)(bp+opx.opDest);
+        if (iid) {
+          if (auto nxi = Instance.iteratorNext(iid)) {
+            bp[VM.Slot.Self] = nxi;
+            break; // this will execute jump
+          }
+        }
+        ++cptr; // skip jump
+        break;
+      case Op.kiter: // kill iterator, should be called to prevent memory leaks
+        auto iid = *cast(uint*)(bp+opx.opDest);
+        if (iid) {
+          // restore `self` and `other`
+          bp[VM.Slot.Self] = bp[VM.Slot.Other];
+          bp[VM.Slot.Other] = Instance.iteratorOldSelf(iid);
+        }
+        break;
+
+      case Op.lirint: // dest = lrint(op0): do lrint() (or another fast float->int conversion)
+        bp[opx.opDest] = lrint(bp[opx.opOp0]);
+        break;
+
+      default: import std.string : format; assert(0, "invalid opcode: %s".format(opx.opCode));
     }
   }
 }
