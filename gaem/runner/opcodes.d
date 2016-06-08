@@ -75,17 +75,14 @@ enum Op {
         // "object" is any object here, including sprites, background, sounds...
 
   fval, // load field value; op0: obj id; op1: int! reg (field id)
-  i1val, // load indexed value; op0: varref; op1: index
-  i2val, // load indexed value; op0: varref; op1: first index; (op1+1): second index
+  i1fval, // load indexed value; op0: obj id; op1: xslots (int! field id, first index)
+  i2fval, // load indexed value; op0: obj id; op1: xslots (int! field id, first index, second index)
 
   // ref+store will be replaced with this
   fstore, // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
 
-  i1sfstore, // store value *from* dest into indexed reference in `self`; op0: fid; op1: index; can create arrays
-  i2sfstore, // store value *from* dest into indexed reference in `self`; op0: fid; op1: first index; (op1+1): second index; can create arrays
-
-  i1fstore, // store value *from* dest into indexed reference; op0: obj id; op1: index; can create arrays
-  i2fstore, // store value *from* dest into indexed reference; op0: obj id; op1: first index; (op1+1): second index; can create arrays
+  i1fstore, // store value *from* dest into indexed reference; op0: obj id; op1: xslots (int! field id, first index)
+  i2fstore, // store value *from* dest into indexed reference; op0: obj id; op1: xslots (int! field id, first index, second index)
 
   // `with` is done by copying `self` to another reg, execute the code and restore `self`
   siter, // start instance iterator; dest: iterid; op0: objid or instid
@@ -131,7 +128,7 @@ uint dumpInstr (File fo, uint pc, const(uint)[] code) {
     fo.writefln("%s", cast(Op)code[pc].opCode);
     return 1;
   }
-  fo.writef("%-8s", cast(Op)code[pc].opCode);
+  fo.writef("%-9s", cast(Op)code[pc].opCode);
   switch (atp) with (OpArgs) {
     case Dest: fo.writefln("dest:%s", code[pc].opDest); break;
     case DestOp0: fo.writefln("dest:%s, op0:%s", code[pc].opDest, code[pc].opOp0); break;
@@ -214,23 +211,13 @@ shared static this () {
 
     Op.ret: Dest,
 
-    //Op.lstore: DestOp0Op1, // store value *from* dest into local slot; op0: slot number
-    /*
-    Op.fstore: DestOp0Op1, // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
-    Op.i1store: DestOp0Op1, // store value *from* dest into indexed reference; op0: varref; op1: index; can create arrays
-    Op.i2store: DestOp0Op1, // store value *from* dest into indexed reference; op0: varref; op1: first index; (op1+1): second index; can create arrays
-    */
-
     Op.oval: Dest2Bytes,
 
     Op.fval: DestOp0Op1,
-    Op.i1val: DestOp0Op1,
-    Op.i2val: DestOp0Op1,
+    Op.i1fval: DestOp0Op1,
+    Op.i2fval: DestOp0Op1,
 
     Op.fstore: DestOp0Op1,
-
-    Op.i1sfstore: DestOp0Op1,
-    Op.i2sfstore: DestOp0Op1,
 
     Op.i1fstore: DestOp0Op1,
     Op.i2fstore: DestOp0Op1,

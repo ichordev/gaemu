@@ -446,7 +446,10 @@ mixin template GenIO() {
 
 
 // ////////////////////////////////////////////////////////////////////////// //
-class GMSomething { this () pure nothrow @safe @nogc {} }
+class GMSomething {
+  Gmk gmk;
+  this (Gmk agmk) pure nothrow @safe @nogc { gmk = agmk; }
+}
 
 
 // ////////////////////////////////////////////////////////////////////////// //
@@ -467,7 +470,7 @@ public:
   BBoxType bboxType;
   int bbleft, bbtop, bbright, bbbottom;
 
-  this (uint aidx, VFile fl) { idx = aidx; load(fl); }
+  this (Gmk agmk, uint aidx, VFile fl) { super(agmk); idx = aidx; load(fl); }
 
 private:
   void load (VFile fl) {
@@ -522,7 +525,7 @@ public:
   int xsep, ysep;
   TrueColorImage image;
 
-  this (uint aidx, VFile fl) { idx = aidx; load(fl); }
+  this (Gmk agmk, uint aidx, VFile fl) { super(agmk); idx = aidx; load(fl); }
 
 private:
   void load (VFile fl) {
@@ -602,7 +605,7 @@ public:
   bool negated;
 
 public:
-  this (VFile fl) { load(fl); }
+  this (Gmk agmk, VFile fl) { super(agmk); load(fl); }
 
 private:
   void load (VFile fl) {
@@ -669,7 +672,7 @@ public:
   GMAction[] actions;
 
 public:
-  this (VFile fl, Type atype, uint aid) { type = atype; load(fl, aid); }
+  this (Gmk agmk, VFile fl, Type atype, uint aid) { super(agmk); type = atype; load(fl, aid); }
 
 private:
   void load (VFile fl, uint aid) {
@@ -678,7 +681,7 @@ private:
     if (xver != 400) throw new Exception("invalid event version");
     auto count = fl.readNum!uint;
     if (count > 1024) throw new Exception("too many actions in event");
-    foreach (immutable idx; 0..count) actions ~= new GMAction(fl);
+    foreach (immutable idx; 0..count) actions ~= new GMAction(gmk, fl);
   }
 }
 
@@ -699,7 +702,7 @@ public:
   GMEvent[][GMEvent.Type.max+1] events;
 
 public:
-  this (uint aidx, VFile fl) { idx = aidx; load(fl); }
+  this (Gmk agmk, uint aidx, VFile fl) { super(agmk); idx = aidx; load(fl); }
 
 private:
   void load (VFile fl) {
@@ -721,7 +724,7 @@ private:
       for (;;) {
         int eid = fl.readNum!int;
         if (eid == -1) break;
-        lst ~= new GMEvent(fl, cast(GMEvent.Type)evidx, eid);
+        lst ~= new GMEvent(gmk, fl, cast(GMEvent.Type)evidx, eid);
       }
       events[evidx] = lst;
     }
@@ -864,7 +867,7 @@ public:
   int xtofs, ytofs;
 
 public:
-  this (uint aidx, VFile fl) { idx = aidx; load(fl); }
+  this (Gmk agmk, uint aidx, VFile fl) { super(agmk); idx = aidx; load(fl); }
 
 private:
   void load (VFile fl) {
@@ -938,7 +941,7 @@ public:
   string constname;
 
 public:
-  this (uint aidx, VFile fl) { idx = aidx; load(fl); }
+  this (Gmk agmk, uint aidx, VFile fl) { super(agmk); idx = aidx; load(fl); }
 
 private:
   void load (VFile fl) {
@@ -959,6 +962,9 @@ private:
 
 // ////////////////////////////////////////////////////////////////////////// //
 final class GMGameSettings : GMSomething {
+public:
+  this (Gmk agmk) { super(agmk); }
+
   @XField!("uint")("fullscreen") bool fullscreen;
   @XField!("uint")("color interpolation") bool cinterp;
   @XField!("uint")("window border") bool winborder;
@@ -1131,6 +1137,9 @@ private:
 
 // ////////////////////////////////////////////////////////////////////////// //
 final class GMGameInfo : GMSomething {
+public:
+  this (Gmk agmk) { super(agmk); }
+
   @XField!("Color")("background color") Color bgcolor;
   @XField!("uint")("show help in separate window") bool newwindow;
   @XField!("pstr")("caption") string caption;
@@ -1155,7 +1164,7 @@ final class GMScript : GMSomething {
   string name;
   string code;
 
-  this (uint aidx, string aname, string acode) { idx = aidx; name = aname; code = acode; }
+  this (Gmk agmk, uint aidx, string aname, string acode) { super(agmk); idx = aidx; name = aname; code = acode; }
 }
 
 
@@ -1186,7 +1195,7 @@ final class GMResTree : GMSomething {
   Node[Node.Type.max+1] roots;
 
 public:
-  this (VFile fl) { load(fl); }
+  this (Gmk agmk, VFile fl) { super(agmk); load(fl); }
 
   // this is slow, but i don't care for now
   string pathForName (Node.Type type, const(char)[] name) {
@@ -1353,7 +1362,7 @@ private:
       auto npos = fl.tell+pksize;
       scope(exit) fl.seek(npos);
       auto zst = wrapZLibStreamRO(fl, VFSZLibMode.ZLib, -1, fl.tell, pksize);
-      gameInfo = new GMGameSettings();
+      gameInfo = new GMGameSettings(this);
       gameInfo.read(zst);
     }
     // triggers
@@ -1368,7 +1377,7 @@ private:
         auto zst = wrapZLibStreamRO(fl, VFSZLibMode.ZLib, -1, fl.tell, pksize);
         foreach (uint idx; 0..count) {
           if (zst.readNum!uint) {
-            auto tg = new GMTrigger(idx, zst);
+            auto tg = new GMTrigger(this, idx, zst);
             assert(triggers.length == idx);
             triggers ~= tg;
           } else {
@@ -1417,7 +1426,7 @@ private:
             case ResType.Sounds: throw new Exception("sound resources aren't supported");
             case ResType.Sprites:
               if (zst.readNum!uint) {
-                auto spr = new GMSprite(c, zst);
+                auto spr = new GMSprite(this, c, zst);
                 assert(sprites.length == c);
                 sprites ~= spr;
               } else {
@@ -1427,7 +1436,7 @@ private:
               break;
             case ResType.Backrounds:
               if (zst.readNum!uint) {
-                auto bg = new GMBackground(c, zst);
+                auto bg = new GMBackground(this, c, zst);
                 assert(backgrounds.length == c);
                 backgrounds ~= bg;
               } else {
@@ -1447,7 +1456,7 @@ private:
                   import std.string : replace;
                   string s = zst.readPStr.replace("\r\n", "\n").replace("\r", "\n");
                   s = s.outdentAll;
-                  auto sc = new GMScript(c, name, s);
+                  auto sc = new GMScript(this, c, name, s);
                   assert(scripts.length == c);
                   scripts ~= sc;
                 }
@@ -1460,7 +1469,7 @@ private:
             case ResType.Timelines: throw new Exception("timeline resources aren't supported");
             case ResType.Objects:
               if (zst.readNum!uint) {
-                auto obj = new GMObject(c, zst);
+                auto obj = new GMObject(this, c, zst);
                 assert(objects.length == c);
                 objects ~= obj;
               } else {
@@ -1470,7 +1479,7 @@ private:
               break;
             case ResType.Rooms:
               if (zst.readNum!uint) {
-                auto room = new GMRoom(c, zst);
+                auto room = new GMRoom(this, c, zst);
                 assert(rooms.length == c);
                 rooms ~= room;
               } else {
@@ -1507,7 +1516,7 @@ private:
       auto npos = fl.tell+pksize;
       scope(exit) fl.seek(npos);
       auto zst = wrapZLibStreamRO(fl, VFSZLibMode.ZLib, -1, fl.tell, pksize);
-      gameHelp = new GMGameInfo();
+      gameHelp = new GMGameInfo(this);
       gameHelp.read(zst);
     }
     // libdeps
@@ -1529,7 +1538,7 @@ private:
       }
     }
     // resource tree
-    tree = new GMResTree(fl);
+    tree = new GMResTree(this, fl);
     postProcess();
   }
 }

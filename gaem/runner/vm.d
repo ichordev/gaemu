@@ -84,12 +84,6 @@ static public:
     gmk = agmk;
   }
 
-  int objId (string name) {
-    if (gmk is null) return -1;
-    if (auto o = gmk.objByName(name)) return o.idx;
-    return -1;
-  }
-
   void opIndexAssign(DG) (DG dg, string name) if (isCallable!DG) {
     assert(name.length > 0);
     uint sid;

@@ -184,8 +184,15 @@ final class Parser {
     for (;;) {
       auto nn = lex.select!(Node, "pop-nondefault")(
         Keyword.Dot, (Loc aloc) => new NodeDot(aloc, n, lex.expectId),
-        Keyword.LParen, (Loc aloc) => parseFCallArgs(new NodeFCall(aloc, n)),
-        Keyword.LBracket, (Loc aloc) => parseIndexing(n),
+        Keyword.LParen, (Loc aloc) {
+          if (cast(NodeId)n is null) error(aloc, "it is not possible to call scripts indirectly");
+          return parseFCallArgs(new NodeFCall(aloc, n));
+        },
+        Keyword.LBracket, (Loc aloc) {
+          // "[][]" is forbidden
+          if (cast(NodeIndex)n) error(aloc, "it is not possible to index arrays");
+          return parseIndexing(n);
+        },
         () => null, // special
       );
       if (nn is null) return n;

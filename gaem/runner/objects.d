@@ -113,7 +113,7 @@ package(gaem.runner) uint fieldCount () { pragma(inline, true); return cast(uint
 
 // ////////////////////////////////////////////////////////////////////////// //
 // game object (instance template)
-class ObjectTpl {
+final class ObjectTpl {
   string name;
   ObjectTpl parent; // 0: no parent -- root object
   uint idx; // globally unique index (should never be zero)
@@ -130,9 +130,52 @@ class ObjectTpl {
 }
 
 private __gshared ObjectTpl[] objects; // 0 is unused
+private __gshared ObjectTpl[string] objByNameMap;
 shared static this () { objects.length = 1; }
 
 enum ObjIdAll = -666;
+
+
+// ////////////////////////////////////////////////////////////////////////// //
+public void createObjects (Gmk gmk) {
+  gmk.forEachObject((o) {
+    assert(o !is null);
+    if (o.name.length == 0) assert(0, "can't register nameless object");
+    if (o.name in objByNameMap) assert(0, "object '"~o.name~"' already registered");
+    auto tpl = new ObjectTpl();
+    tpl.name = o.name;
+    tpl.idx = (o.parentobjidx >= 0 ? o.parentobjidx : uint.max); // temporarily abuse this field
+    tpl.sprite_index = o.spridx;
+    tpl.mask_index = o.maskspridx;
+    tpl.solid = o.solid;
+    tpl.visible = o.visible;
+    tpl.depth = o.depth;
+    tpl.persistent = o.persistent;
+    objByNameMap[o.name] = tpl;
+    objects ~= tpl;
+    return false;
+  });
+
+  // now fix parents
+  foreach (immutable idx, ObjectTpl tpl; objects[1..$]) {
+    if (tpl.idx != uint.max) {
+      auto po = gmk.objByNum(tpl.idx);
+      if (po is null) assert(0, "invalid parent for object '"~tpl.name~"'");
+      if (auto px = po.name in objByNameMap) tpl.parent = *px; else assert(0, "wtf?!");
+    }
+    tpl.idx = cast(uint)idx; // fix index
+  }
+}
+
+
+// 0: no such object
+uint objectByName (const(char)[] name) {
+  if (auto tpp = name in objByNameMap) return (*tpp).idx;
+  return 0;
+}
+
+
+bool validObjectId (uint id) { pragma(inline, true); return (id > 0 && id < objects.length); }
 
 
 // ////////////////////////////////////////////////////////////////////////// //

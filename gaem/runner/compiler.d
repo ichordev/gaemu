@@ -131,6 +131,14 @@ void freeSlot (ubyte num) {
 }
 
 
+void freeSlots (ubyte num, int count) {
+  while (count-- > 0) {
+    freeSlot(num);
+    if (++num == 0) break;
+  }
+}
+
+
 // ////////////////////////////////////////////////////////////////////////// //
 int argvar (string s) {
   switch (s) {
@@ -464,37 +472,38 @@ int isKnownSlot (Node nn) {
 
 
 // asCond: it is used as condition, so we should emit `oval` for objects
-ubyte compileVarAccess (Node nn, int ddest=-1, bool asCond=false) {
+ubyte compileVarAccess (Node nn, int ddest=-1, bool asCond=false, bool noLocalsCheck=false) {
   return selectNode!ubyte(nn,
     (NodeId n) {
-      auto ksl = isKnownSlot(n);
-      if (ksl >= 0) {
-        // this is local variable
-        if (ddest < 0 || ddest == ksl) return ksl; // just use this slot directly
-        auto dest = allocSlot(n.loc, ddest);
-        assert(dest != ksl);
-        emit(Op.copy, dest, cast(ubyte)ksl, 1);
-        return dest;
-      }
-      // this may be object, or sprite, or background...
-      auto oid = VM.objId(n.name);
-      if (oid >= 0) {
-        // object!
-        auto dest = allocSlot(n.loc, ddest);
-        if (asCond) {
-          emit2Bytes(Op.oval, dest, cast(short)oid);
-        } else {
-          //emit2Bytes(Op.ilit, dest, cast(short)oid); //FIXME: introduce new opcode for this?
-          emitPLit(n.loc, dest, oid);
+      if (!noLocalsCheck) {
+        auto ksl = isKnownSlot(n);
+        if (ksl >= 0) {
+          // this is local variable
+          if (ddest < 0 || ddest == ksl) return ksl; // just use this slot directly
+          auto dest = allocSlot(n.loc, ddest);
+          assert(dest != ksl);
+          emit(Op.copy, dest, cast(ubyte)ksl, 1);
+          return dest;
         }
-        return dest;
+        // this may be object, or sprite, or background...
+        if (auto oid = objectByName(n.name)) {
+          // object!
+          auto dest = allocSlot(n.loc, ddest);
+          if (asCond) {
+            emit2Bytes(Op.oval, dest, cast(short)oid);
+          } else {
+            //emit2Bytes(Op.ilit, dest, cast(short)oid); //FIXME: introduce new opcode for this?
+            emitPLit(n.loc, dest, oid);
+          }
+          return dest;
+        }
       }
       {
         // it's not local, so generate field access (Op.fval)
         // this is `self` field
         auto dest = allocSlot(n.loc, ddest);
         auto fid = allocSlot(n.loc);
-        emit2Bytes(Op.ilit, fid, cast(short)allocateFieldId(n.name));
+        emit2Bytes(Op.xlit, fid, cast(short)allocateFieldId(n.name));
         freeSlot(fid);
         emit(Op.fval, dest, VM.Slot.Self, fid);
         return dest;
@@ -508,7 +517,7 @@ ubyte compileVarAccess (Node nn, int ddest=-1, bool asCond=false) {
         if (oid.name == "self" || oid.name == "other" || oid.name == "global") {
           // well-known name
           auto fid = allocSlot(n.loc);
-          emit2Bytes(Op.ilit, fid, cast(short)allocateFieldId(n.name));
+          emit2Bytes(Op.xlit, fid, cast(short)allocateFieldId(n.name));
           if (oid.name == "global") {
             auto oids = allocSlot(n.loc);
             emit2Bytes(Op.ilit, oids, -666);
@@ -525,46 +534,37 @@ ubyte compileVarAccess (Node nn, int ddest=-1, bool asCond=false) {
       auto oids = compileExpr(n.e);
       freeSlot(oids);
       auto fid = allocSlot(n.loc);
-      emit2Bytes(Op.ilit, fid, cast(short)allocateFieldId(n.name));
+      emit2Bytes(Op.xlit, fid, cast(short)allocateFieldId(n.name));
       emit(Op.fval, dest, oids, fid);
       return dest;
     },
     (NodeIndex n) {
-      /*
       assert(n.ei0 !is null);
+      assert(ddest < 0 || ddest > VM.Slot.max);
       auto dest = allocSlot(n.loc, ddest);
-      if (n.ei1 is null) {
-        // one index
-        if (auto id = cast(NodeId)n.e) {
-          auto vid = varSlot(id.name);
-          if (vid >= 0) {
-            // this is local variable
-            compileError(n.loc, "indexing locals is not supported yet");
-            assert(0);
-          }
-        }
-        // not a local
-        auto i0 = compileExpr(n.ei0);
-        auto refs = compileExpr(n.e, wantref:true);
-        emit(Op.i1val, dest, refs, i0);
-        freeSlot(refs);
-        freeSlot(i0);
-      } else {
-        // two indexes
-        auto islots = allocSlots(n.loc, 2);
-        auto i0 = compileExpr(n.ei0, islots);
-        assert(i0 == islots);
-        auto i1 = compileExpr(n.ei1, islots+1);
-        assert(i0 == islots+1);
-        auto refs = compileExpr(n.e, wantref:true);
-        emit(Op.i2val, dest, refs, islots);
-        freeSlot(refs);
-        freeSlot(i0);
-        freeSlot(i1);
+      auto islots = allocSlots(n.loc, 2+(n.ei1 !is null ? 1 : 0)); // field id, index
+      compileExpr(n.ei0, islots+1, noLocalsCheck:noLocalsCheck);
+      if (n.ei1 !is null) compileExpr(n.ei1, islots+2, noLocalsCheck:noLocalsCheck);
+      // `islots+0` should be free here -- our slot alloc scheme guarantees it
+      auto xfd = compileExpr(n.e, asCond:true, noLocalsCheck:noLocalsCheck); // asCond, to produce `oval`
+      if (xfd <= VM.Slot.max || isLocalSlot(xfd)) { compileError(n.loc, "indexing locals is not supported yet"); assert(0); }
+      freeSlot(xfd); // don't need it
+      switch (VM.code[pc-1].opCode) {
+        case Op.oval: compileError(n.loc, "can't index object"); assert(0);
+        case Op.fval:
+          auto oid = VM.code[pc-1].opOp0;
+          auto fid = VM.code[pc-1].opOp1;
+          setpc(pc-1); // remove this opcode
+          // copy field id
+          if (fid != islots) emit(Op.copy, islots, fid, 1);
+          // generate new opcode
+          emit((n.ei1 is null ? Op.i1fval : Op.i2fval), dest, oid, islots);
+          break;
+        case Op.copy: compileError(n.loc, "indexing locals is not supported yet"); assert(0); // just in case, should not be reached
+        default: compileError(n.loc, "can't index something"); assert(0);
       }
+      freeSlots(islots, 2+(n.ei1 !is null ? 1 : 0));
       return dest;
-      */
-      assert(0, "not yet");
     },
     () { assert(0, "unimplemented node: "~typeid(nn).name); },
   );
@@ -573,122 +573,55 @@ ubyte compileVarAccess (Node nn, int ddest=-1, bool asCond=false) {
 
 // assVal: "new value" slot
 // i0, i1: indexes
-void compileVarStore (Node nn, ubyte assVal, int i0=-1, int i1=-1) {
+void compileVarStore (Node nn, ubyte assVal, bool noLocalsCheck=false) {
   selectNode!void(nn,
     (NodeId n) {
-      auto ksl = isKnownSlot(n);
-      if (ksl >= 0) {
-        // this is local variable
-        if (i0 >= 0 || i1 >= 0) { compileError(n.loc, "local arrays are not implemented yet"); assert(0); }
-        if (assVal != ksl) emit(Op.copy, cast(ubyte)ksl, assVal, 1);
-        //freeSlot(assVal);
-        return;
+      if (!noLocalsCheck) {
+        auto ksl = isKnownSlot(n);
+        if (ksl >= 0) {
+          // this is local variable
+          if (assVal != ksl) emit(Op.copy, cast(ubyte)ksl, assVal, 1);
+          return;
+        }
+        // this may be object, or sprite, or background...
+        if (objectByName(n.name)) { compileError(n.loc, "can't assign value to object"); assert(0); }
       }
-      // this may be object, or sprite, or background...
-      auto oid = VM.objId(n.name);
-      if (oid >= 0) { compileError(n.loc, "can't assign value to object"); assert(0); }
       {
         // it's not local, so generate field store (Op.fval)
         // this is `self` field
         auto fid = allocSlot(n.loc);
-        emit2Bytes(Op.ilit, fid, cast(short)allocateFieldId(n.name));
+        emit2Bytes(Op.xlit, fid, cast(short)allocateFieldId(n.name));
         freeSlot(fid);
-        if (i1 >= 0) {
-          assert(i1 > 0 && i0 == i1-1);
-          emit(Op.i2fstore, assVal, fid, cast(ubyte)i0);
-        } else if (i0 >= 0) {
-          emit(Op.i1fstore, assVal, fid, cast(ubyte)i0);
-        } else {
-          emit(Op.fstore, assVal, VM.Slot.Self, fid); // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
-        }
-        //freeSlot(assVal);
+        emit(Op.fstore, assVal, VM.Slot.Self, fid); // store value *from* dest into field; op0: obj id; op1: int! reg (field id); can create fields
         return;
       }
       assert(0);
     },
-    (NodeDot n) {
-      // field assignment; lower this to `with` if this is not known object
-      if (auto oid = cast(NodeId)n.e) {
-        // we know object name directly
-        if (oid.name == "self" || oid.name == "other" || oid.name == "global") {
-          // well-known name
-          auto fid = allocSlot(n.loc);
-          emit2Bytes(Op.ilit, fid, cast(short)allocateFieldId(n.name));
-          if (oid.name == "global") {
-            auto oids = allocSlot(n.loc);
-            emit2Bytes(Op.ilit, oids, -666);
-            freeSlot(oids);
-            emit(Op.fstore, assVal, oids, fid);
-          } else {
-            emit(Op.fstore, assVal, (oid.name == "self" ? VM.Slot.Self : VM.Slot.Other), fid);
-          }
-          freeSlot(fid);
-          //freeSlot(assVal);
-          return;
-        }
-        // it is unknown thing, let's lower it to `with`
-        auto iid = allocSlot(n.loc);
-        //auto xid = compileExprLoadNoVal(oid);
-        auto xid = compileVarAccess(oid, asCond:false);
-        freeSlot(xid);
-        // field name
-        auto fid = allocSlot(n.loc);
-        emit2Bytes(Op.ilit, fid, cast(short)allocateFieldId(n.name));
-        freeSlot(fid); // why not?
-        emit(Op.siter, iid, xid); // start instance iterator; dest: iterid; op0: objid or instid; next is jump over loop
-        auto echain = emitJumpChain(0);
-        // loop body
-        auto bpc = pc;
-        emit(Op.fstore, assVal, VM.Slot.Self, fid);
-        emit(Op.niter, 0, iid);
-        emitJumpTo(bpc);
-        fixJumpChain(echain, pc);
-        emit(Op.kiter, iid);
-        freeSlot(iid);
-        //freeSlot(assVal);
-        return;
-      } else {
-        // this is some complex expression, it is not allowed yet
-        compileError(n.loc, "such complex assignments are not implemented yet");
-      }
-      assert(0);
-    },
+    (NodeDot n) { assert(0, "internal compiler error: NodeDot should not be here"); },
     (NodeIndex n) {
-      /*
       assert(n.ei0 !is null);
-      auto dest = allocSlot(n.loc, ddest);
-      if (n.ei1 is null) {
-        // one index
-        if (auto id = cast(NodeId)n.e) {
-          auto vid = varSlot(id.name);
-          if (vid >= 0) {
-            // this is local variable
-            compileError(n.loc, "indexing locals is not supported yet");
-            assert(0);
-          }
-        }
-        // not a local
-        auto i0 = compileExpr(n.ei0);
-        auto refs = compileExpr(n.e, wantref:true);
-        emit(Op.i1val, dest, refs, i0);
-        freeSlot(refs);
-        freeSlot(i0);
-      } else {
-        // two indexes
-        auto islots = allocSlots(n.loc, 2);
-        auto i0 = compileExpr(n.ei0, islots);
-        assert(i0 == islots);
-        auto i1 = compileExpr(n.ei1, islots+1);
-        assert(i0 == islots+1);
-        auto refs = compileExpr(n.e, wantref:true);
-        emit(Op.i2val, dest, refs, islots);
-        freeSlot(refs);
-        freeSlot(i0);
-        freeSlot(i1);
+      auto islots = allocSlots(n.loc, 2+(n.ei1 !is null ? 1 : 0)); // field id, index
+      compileExpr(n.ei0, islots+1, noLocalsCheck:noLocalsCheck);
+      if (n.ei1 !is null) compileExpr(n.ei1, islots+2, noLocalsCheck:noLocalsCheck);
+      // `islots+0` should be free here -- our slot alloc scheme guarantees it
+      auto spc = pc;
+      compileVarStore(n.e, assVal, noLocalsCheck:noLocalsCheck);
+      // storing to local can generate no code (it can't, but...)
+      if (pc == spc) { compileError(n.loc, "indexing locals is not supported yet"); assert(0); }
+      switch (VM.code[pc-1].opCode) {
+        case Op.fstore:
+          auto oid = VM.code[pc-1].opOp0;
+          auto fid = VM.code[pc-1].opOp1;
+          setpc(pc-1); // remove this opcode
+          // copy field id
+          if (fid != islots) emit(Op.copy, islots, fid, 1);
+          // generate new opcode
+          emit((n.ei1 is null ? Op.i1fstore : Op.i2fstore), assVal, oid, islots);
+          break;
+        case Op.copy: compileError(n.loc, "indexing locals is not supported yet"); assert(0);
+        default: compileError(n.loc, "can't index something"); assert(0);
       }
-      return dest;
-      */
-      assert(0, "not yet");
+      freeSlots(islots, 2+(n.ei1 !is null ? 1 : 0));
     },
     () { assert(0, "unimplemented node: "~typeid(nn).name); },
   );
@@ -697,7 +630,7 @@ void compileVarStore (Node nn, ubyte assVal, int i0=-1, int i1=-1) {
 
 // returns dest slot
 // can put value in desired dest
-ubyte compileExpr (Node nn, int ddest=-1, bool asCond=false) {
+ubyte compileExpr (Node nn, int ddest=-1, bool asCond=false, bool noLocalsCheck=false) {
   import core.stdc.math : lrint;
   import std.math : NaN, isNaN;
 
@@ -744,7 +677,7 @@ ubyte compileExpr (Node nn, int ddest=-1, bool asCond=false) {
       emitPLit(n.loc, dest, buildStrId(sid));
       return dest;
     },
-    (NodeUnaryParens n) => compileExpr(n.e, ddest, asCond),
+    (NodeUnaryParens n) => compileExpr(n.e, ddest, asCond, noLocalsCheck),
     (NodeUnaryNot n) => doUnOp(Op.lnot, n),
     (NodeUnaryNeg n) => doUnOp(Op.neg, n),
     (NodeUnaryBitNeg n) => doUnOp(Op.bneg, n),
@@ -784,7 +717,7 @@ ubyte compileExpr (Node nn, int ddest=-1, bool asCond=false) {
         // reserve result slot, so it won't be overwritten
         assert(!slots[fcs+VM.Slot.Argument0+idx]);
         slots[fcs+VM.Slot.Argument0+idx] = true;
-        auto dp = compileExpr(a, fcs+VM.Slot.Argument0+idx);
+        auto dp = compileExpr(a, fcs+VM.Slot.Argument0+idx, noLocalsCheck:noLocalsCheck);
         if (dp != fcs+VM.Slot.Argument0+idx) assert(0, "internal compiler error");
       }
       // now free result slots
@@ -799,8 +732,80 @@ ubyte compileExpr (Node nn, int ddest=-1, bool asCond=false) {
       return dest;
     },
     // only variable access is left
-    (Node n) => compileVarAccess(n, ddest, asCond),
+    (Node n) => compileVarAccess(n, ddest, asCond, noLocalsCheck),
   );
+}
+
+
+bool hasDotAccess (Node nn) {
+  if (nn is null) return false;
+  auto rn = visitNodes(nn, (Node n) {
+    if (cast(NodeDot)n) return VisitRes.Stop;
+    return VisitRes.Continue;
+  });
+  return (rn !is null);
+}
+
+
+// compile dotted assign as series of `with`
+void lowerLeftAss (Node el, ubyte assVal) {
+  Node curelem = el;
+  Node[] withStack;
+  while (curelem !is null) {
+    if (auto dot = cast(NodeDot)curelem) {
+      withStack ~= new NodeId(dot.loc, dot.name);
+      curelem = dot.e;
+    } else if (auto idx = cast(NodeIndex)curelem) {
+      // `e` should be NodeDot or NodeId
+      if (auto dot = cast(NodeDot)idx.e) {
+        auto x = new NodeIndex(idx.loc, new NodeId(dot.loc, dot.name));
+        x.ei0 = idx.ei0;
+        x.ei1 = idx.ei1;
+        withStack ~= x;
+        curelem = dot.e;
+      } else if (auto id = cast(NodeId)idx.e) {
+        withStack ~= idx;
+        curelem = null;
+      } else {
+        compileError(curelem.loc, "something strange is happened here (0)");
+      }
+    } else if (auto id = cast(NodeId)curelem) {
+      withStack ~= id;
+      curelem = null;
+    } else {
+      compileError(curelem.loc, "something strange is happened here (1)");
+    }
+  }
+  assert(withStack.length);
+  /*
+  foreach (immutable idx, Node n; withStack; reverse) {
+    import std.stdio;
+    writeln(idx, ": ", n.toString);
+  }
+  */
+  if (cast(NodeIndex)withStack[$-1]) compileError(withStack[$-1].loc, "invalid indexing");
+  // generate iterators (in reverse order) for [1..$]; [0] is field
+  ubyte[] its;
+  uint[] spc;
+  uint[] jchain;
+  foreach (Node n; withStack[1..$]; reverse) {
+    its ~= allocSlot(n.loc);
+    auto xid = compileVarAccess(n, asCond:false, noLocalsCheck:true);
+    freeSlot(xid);
+    emit(Op.siter, its[$-1], xid); // start instance iterator; dest: iterid; op0: objid or instid; next is jump over loop
+    jchain ~= emitJumpChain(0);
+    spc ~= pc;
+  }
+  // trivial body of the inner `with`
+  compileVarStore(withStack[0], assVal, noLocalsCheck:true);
+  // unwind `with`
+  foreach (immutable idx; 0..its.length; reverse) {
+    emit(Op.niter, 0, its[idx]);
+    emitJumpTo(spc[idx]);
+    fixJumpChain(jchain[idx], pc);
+    emit(Op.kiter, its[idx]);
+    freeSlot(its[idx]);
+  }
 }
 
 
@@ -816,23 +821,51 @@ void compileStatement (Node nn) {
     (NodeStatementEmpty n) {},
     (NodeStatementAss n) {
       // assignment
+      // lower `a.b = 42;` to `with`
+      // note that `a.b[42] = 666;` is `NodeIndex` which contains `NodeDot`
       if (cast(NodeId)n.el is null && cast(NodeDot)n.el is null && cast(NodeIndex)n.el is null) compileError(n.loc, "assignment to rvalue");
       auto ksl = isKnownSlot(n.el);
       if (ksl >= 0) {
         // this is known slot, just put value into it directly
         auto src = compileExpr(n.er, ksl);
         assert(src == ksl);
-        return src;
+      } else {
+        auto src = compileExpr(n.er);
+        // known object?
+        if (auto dot = cast(NodeDot)n.el) {
+          if (auto oid = cast(NodeId)dot) {
+            // we know object name directly
+            if (oid.name == "self" || oid.name == "other" || oid.name == "global") {
+              // well-known name
+              auto fid = allocSlot(dot.loc);
+              emit2Bytes(Op.xlit, fid, cast(short)allocateFieldId(dot.name));
+              if (oid.name == "global") {
+                auto oids = allocSlot(dot.loc);
+                emit2Bytes(Op.ilit, oids, -666);
+                freeSlot(oids);
+                emit(Op.fstore, src, oids, fid);
+              } else {
+                emit(Op.fstore, src, (oid.name == "self" ? VM.Slot.Self : VM.Slot.Other), fid);
+              }
+              freeSlot(fid);
+              freeSlot(src);
+              return;
+            }
+          }
+        }
+        // dot access need lowering
+        if (hasDotAccess(n.el)) {
+          lowerLeftAss(n.el, src);
+        } else {
+          compileVarStore(n.el, src);
+        }
+        freeSlot(src);
       }
-      auto src = compileExpr(n.er);
-      compileVarStore(n.el, src);
-      freeSlot(src);
-      return src;
     },
     (NodeStatementExpr n) { freeSlot(compileExpr(n.e)); },
     (NodeReturn n) {
       if (n.e is null) {
-        emit2Bytes(Op.ilit, 0, 0);
+        emitPLit(n.loc, 0, 0);
         emit(Op.ret, 0);
       } else {
         auto dest = compileExpr(n.e);
@@ -1195,7 +1228,8 @@ void doCompileFunc (NodeFunc fn) {
   auto startpc = emit(Op.enter);
   curfn.pcs = pc;
   compileStatement(curfn.ebody);
-  emit(Op.ret);
+  emitPLit(curfn.loc, 0, 0);
+  emit(Op.ret, 0);
   curfn.pce = pc;
   // patch enter
   VM.code[startpc] = (locals.length<<24)|((maxUsedSlot+1)<<16)|(maxArgUsed<<8)|cast(ubyte)Op.enter;

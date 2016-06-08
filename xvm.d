@@ -42,7 +42,10 @@ void main (string[] args) {
   funcs = cliProcessArgs!(
     "--time", (fname) { measureTime = true; },
     "--norun", (fname) { doRun = false; },
-  )(args, (Gmk gmk) { VM.setGmk(gmk); });
+  )(args, (Gmk gmk) {
+    VM.setGmk(gmk);
+    createObjects(gmk);
+  });
 
   if (funcs.length > 0) {
     import core.time;
