@@ -322,8 +322,13 @@ void exportRoom (Gmk gmk, GMRoom o, string dir) {
     fo.writeln;
     foreach (immutable idx, ref i; o.insts) {
       //fo.writeln;
-      fo.writefln("inst%s=%s %s %s", idx, gmk.objByNum(i.objidx).name, i.x, i.y);
-      //fo.writefln("inst%s_id=%s", idx, i.id); // starting from 100000
+      auto oo = gmk.objByNum(i.objidx);
+      if (oo) {
+        fo.writefln("inst%s=%s %s %s", idx, gmk.objByNum(i.objidx).name, i.x, i.y);
+        //fo.writefln("inst%s_id=%s", idx, i.id); // starting from 100000
+      } else {
+        fo.writefln("inst%s=%s %s %s", idx, "<???>", i.x, i.y);
+      }
       if (i.locked) fo.writefln("inst%s_locked=%s", idx, i.locked);
       if (i.createcode.strip.length) assert(0);
     }
@@ -331,9 +336,9 @@ void exportRoom (Gmk gmk, GMRoom o, string dir) {
 }
 
 
-void main () {
+void main (string[] args) {
   import std.path : buildPath;
-  auto gmk = new Gmk("/home/ketmar/back/D/prj/spel/spelunky_collection/yasmk8/yasm_k8.gmk");
+  auto gmk = new Gmk(args.length > 1 ? args[1] : "/home/ketmar/back/D/prj/spel/spelunky_collection/yasmk8/yasm_k8.gmk");
 
   gmk.forEachObject((o) {
     auto path = gmk.tree.pathForName(GMResTree.Node.Type.Object, o.name);
