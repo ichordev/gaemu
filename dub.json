@@ -1,0 +1,38 @@
+{
+	"name": "gaemu",
+	"description": "An unofficial update of Ketmar Dark's GameMaker 8 emulator.",
+	"authors": ["Aya Partridge"],
+	"license": "GPL-3.0-only",
+	
+	"dependencies": {
+		"arsd-official:color_base": "~>2.0.0",
+		"arsd-official:image_files": "~>2.0.0",
+	},
+	
+	"configurations": [
+		{
+			"name": "xvm",
+			"versions": ["XVM"],
+		},
+		{
+			"name": "fvm",
+			"versions": ["FVM"],
+		},
+		{
+			"name": "ungmk",
+			"versions": ["UnGMK"],
+		},
+		{
+			"name": "checker",
+			"versions": ["Checker"],
+		},
+		{
+			"name": "gen-tokens",
+			"versions": ["GenTokens"],
+		},
+	],
+	
+	"targetType": "executable",
+	"workingDirectory": "bin",
+	"targetPath": "bin",
+}
