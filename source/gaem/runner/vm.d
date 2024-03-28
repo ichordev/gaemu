@@ -182,7 +182,7 @@ Real doExec(uint pc){
 		"if(!o0.isReal || !o1.isReal) runtimeError(cast(uint)(cptr-VM.code.ptr-1), `invalid type`);\n"~
 		"bp[dest] = lrint(o0)"~op~"lrint(o1);\n"~
 		"break;";
-
+	
 	enum BinCmpMixin(string op) =
 		"auto dest = opx.opDest;\n"~
 		"auto o0 = bp[opx.opOp0];\n"~
@@ -199,7 +199,7 @@ Real doExec(uint pc){
 		"  bp[dest] = (o0 "~op~" o1 ? 1: 0);\n"~
 		"}\n"~
 		"break;";
-
+	
 	enum BinLogMixin(string op) =
 		"auto dest = opx.opDest;\n"~
 		"auto o0 = bp[opx.opOp0];\n"~
@@ -216,7 +216,7 @@ Real doExec(uint pc){
 		"  bp[dest] = (lrint(o0) "~op~" lrint(o1) ? 1: 0);\n"~
 		"}\n"~
 		"break;";
-
+	
 	static if(is(Real == float)){
 		import core.stdc.math: lrint = lrintf;
 	}else static if(is(Real == double)){
